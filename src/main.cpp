@@ -9,11 +9,15 @@ CMMC_PACKET_T pArr[60];
 int pArrIdx = 0;
 char espnowMsg[300]; 
 
-// #define rxPin 16
-// #define txPin 17 
+#define rxPin (16)
+#define txPin (17)
+
+#define GREEN_LED (23)
+#define RED_LED (22)
+#define RESET_PIN (13)
+
 #define LED_PIN 
 
-// SoftwareSerial swSerial(rxPin, txPin);
 CMMC_NB_IoT nb(&Serial1);
 uint32_t counter = 0; 
 uint32_t sentCnt = 0; 
@@ -21,34 +25,41 @@ uint32_t sentCnt = 0;
 void str2Hex(const char* text, char* buffer);
 void toHexString(const uint8_t array[], size_t len, char buffer[]);
 
-uint8_t currentSleepTimeMinuteByte = 15 ; 
+uint8_t currentSleepTimeMinuteByte = 15; 
 bool dirty = false;
 bool isNbConnected = false;
+// String token = "b98ce7b0-185b-11e8-8630-b33e669e2295";
 String token = "f169c8e0-a872-11e8-8e2c-19a3b7904cb9";
-// String token = "f169c8e0-a872-11e8-8e2c-19a3b7904cb9";
 char tokenHex[100];
 uint32_t prev;
 // uint8_t remoteMac[6] = {0x2e, 0x3a, 0xe8, 0x12, 0xbe, 0x92};
 esp_now_peer_info_t slave;
+
 void setup() {
   bzero(&slave, sizeof(slave));
   Serial.begin(115200);
   Serial.println("HELLO..");
+  Serial1.begin(9600, SERIAL_8N1, rxPin, txPin, false);
+  // Serial1.begin(9600);
 
+  pinMode(RESET_PIN, OUTPUT);
+  digitalWrite(RESET_PIN, HIGH);
+  delay(100);
+  digitalWrite(RESET_PIN, LOW);
+  delay(100); 
+
+  pinMode(GREEN_LED, OUTPUT);
+  pinMode(RED_LED, OUTPUT); 
   pinMode(25, OUTPUT);
-  digitalWrite(25, HIGH);
-  delay(100);
-  digitalWrite(25, LOW);
-  delay(100);
 
-  pinMode(13, OUTPUT);
-  digitalWrite(13, HIGH);
-  delay(100);
-  digitalWrite(13, LOW);
-  delay(100);
+  digitalWrite(GREEN_LED, HIGH); 
+  digitalWrite(RED_LED, HIGH); 
+  // digitalWrite(23, HIGH); 
+  // digitalWrite(25, HIGH); 
+  delay(500);
 
-  // Serial1.begin(9600, SERIAL_8N1, 17, 16, false);
-  Serial1.begin(9600);
+
+
   Serial.println("Serial1..");
   WiFi.disconnect();
   Serial.println("[1]..");
@@ -73,8 +84,9 @@ void setup() {
 
   nb.onDeviceReboot([]() {
     Serial.println(F("[user] Device rebooted."));
-    // nb.queryDeviceInfo();
-    // delay(1000);
+    digitalWrite(GREEN_LED, LOW);
+    digitalWrite(RED_LED, LOW);
+    delay(2000);
   }); nb.onDeviceReady([]() {
     Serial.println("[user] Device Ready!");
   });
@@ -96,21 +108,24 @@ void setup() {
 
   nb.onConnecting([]() {
     Serial.println("Connecting to NB-IoT...");
+    digitalWrite(GREEN_LED, !digitalRead(GREEN_LED));
     delay(500);
   });
 
   nb.onConnected([]() {
+    digitalWrite(RED_LED, HIGH);
+    digitalWrite(GREEN_LED, HIGH);
     Serial.print("[user] NB-IoT Network connected at (");
     Serial.print(millis());
     Serial.println("ms)");
-    delay(1000);
+    delay(3000);
     Serial.println(nb.createUdpSocket("103.20.205.85", 5683, UDPConfig::DISABLE_RECV));
     Serial.println(nb.createUdpSocket("103.212.181.167", 55566, UDPConfig::DISABLE_RECV));
     isNbConnected = 1;
     delay(1000);
   });
 
-  Serial.println("WAIT... 5s");
+  Serial.println("WAIT... 2s");
   delay(2000);
   nb.rebootModule();
 
@@ -119,7 +134,6 @@ void setup() {
   });
 
   esp_now_register_recv_cb([&](const uint8_t *mac_addr, const uint8_t *data, int data_len) {
-    digitalWrite(25, !digitalRead(25));
     memcpy(&slave.peer_addr, mac_addr, 6);
     CMMC_PACKET_T wrapped;
     CMMC_SENSOR_DATA_T packet;
@@ -152,6 +166,7 @@ void setup() {
 }
 
 uint32_t lastSentOkMillis;
+unsigned int ct = 1;
 
 void loop() {
   if ( (millis() - lastSentOkMillis) > 10800*1000) { 
@@ -165,7 +180,7 @@ void loop() {
       for (int i = pArrIdx - 1; i >= 0; i--) {
         Serial.printf("reading idx = %d\r\n", i);
         toHexString((uint8_t*)  &pArr[i], sizeof(CMMC_PACKET_T), (char*)espnowMsg);
-        sprintf(b, "{\"payload\": \"%s\"}", espnowMsg);
+        sprintf(b, "{\"ct\":\"%lu\", \"payload\": \"%s\"}", ct++, espnowMsg);
         str2Hex(b, buffer);
         String p3 = "";
         p3 += String("40");
