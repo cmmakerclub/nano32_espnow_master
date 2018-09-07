@@ -35,9 +35,7 @@ uint32_t msAfterESPNowRecv = millis();
 bool dirty = false;
 bool isNbConnected = false;
 
-// String token = "b98ce7b0-185b-11e8-8630-b33e669e2295";
-// String token = "f169c8e0-a872-11e8-8e2c-19a3b7904cb9";
-String token = "3ffbfb30-aaae-11e8-8e2c-19a3b7904cb9";
+String token = "x";
 char tokenHex[100];
 uint32_t prev;
 // uint8_t remoteMac[6] = {0x2e, 0x3a, 0xe8, 0x12, 0xbe, 0x92};
