@@ -3,6 +3,8 @@
 #include <WiFi.h>
 #include <CMMC_NB_IoT.h>
 #include "data_type.h"
+#include "soc/soc.h"
+#include "soc/rtc_cntl_reg.h"
 
 HardwareSerial Serial1(2);
 CMMC_PACKET_T pArr[60];
@@ -42,6 +44,7 @@ uint32_t prev;
 esp_now_peer_info_t slave;
 
 void setup() {
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector
   bzero(&slave, sizeof(slave));
   Serial.begin(115200);
   Serial.println("HELLO..");
@@ -65,11 +68,8 @@ void setup() {
 
 
   Serial.println("Serial1..");
-  WiFi.disconnect();
-  Serial.println("[1]..");
-  Serial.println("[1.1]..");
+  WiFi.disconnect(); 
   WiFi.mode(WIFI_AP_STA);
-  Serial.println("[1.2]..");
   delay(200);
   Serial.println("[2]..");
   Serial.print("STA MAC: "); Serial.println(WiFi.macAddress());
@@ -116,18 +116,16 @@ void setup() {
     ledcWrite(1, 0);
     delay(300);
     ledcWrite(1, 20);
-    Serial.println(F("[user] Device rebooted."));
     Serial.println("Connecting to NB-IoT...");
     digitalWrite(GREEN_LED, !digitalRead(GREEN_LED));
     delay(300);
   });
 
   nb.onConnected([]() {
-    ledcWrite(1, 20);
+    ledcWrite(1, 0);
     Serial.println(F("[user] Device rebooted."));
     digitalWrite(RED_LED, HIGH);
     digitalWrite(GREEN_LED, HIGH);
-    ledcWrite(1, 20);
     Serial.print("[user] NB-IoT Network connected at (");
     Serial.print(millis());
     Serial.println("ms)");
@@ -207,7 +205,6 @@ void loop() {
       String p3 = "";
       p3 += String("40");
       p3 += String("02");
-      // p3 += String(ct, HEX);
       p3 += String(msgId);
       p3 += String("b5");
       p3 += String("4e42496f54"); // NB-IoT
@@ -216,41 +213,32 @@ void loop() {
       p3 +=  String(tokenHex);
       p3 += String("ff");
       p3 += String(buffer);
-      Serial.println(p3);
+      // Serial.println(p3);
       int rt = 0;
       while (true) {
-        ledcWrite(1, 20);
+        ledcWrite(1, 50); 
         if (nb.sendMessageHex(p3.c_str(), 0)) { 
-          delay(300); 
-          ledcWrite(1, 0);
-
-          ledcWrite(1, 20);
+          ledcWrite(1, 0); 
+          delay(100); 
+          ledcWrite(1, 50); 
           nb.sendMessageHex(p3.c_str(), 0);
-          delay(300);
-          ledcWrite(1, 0);
-
-          ledcWrite(1, 20);
-          nb.sendMessageHex(p3.c_str(), 0);
-          delay(300);
-          ledcWrite(1, 0);
-
+          ledcWrite(1, 0); 
           Serial.println(">> [ais] socket0: send ok.");
           pArrIdx--;
           lastSentOkMillis = millis();
-          delay(1000);
+          delay(100);
           break;
         }
         else {
           Serial.println(">> [ais] socket0: send failed.");
           if (++rt > 5) {
             delay(100);
-            // ESP.restart();
             ESP.deepSleep(1e6);
             delay(100);
             break;
           }
         }
-        delay(100);
+        delay(200);
       }
     }
     digitalWrite(RED_LED, LOW);
