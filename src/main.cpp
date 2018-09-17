@@ -14,6 +14,8 @@ char espnowMsg[300];
 #define rxPin (16)
 #define txPin (17)
 
+#define ANALOG_PIN_0 (36)
+
 #define BOARD_LED (25)
 #define GREEN_LED (23)
 #define RED_LED (22)
@@ -35,7 +37,7 @@ uint32_t msAfterESPNowRecv = millis();
 bool dirty = false;
 bool isNbConnected = false;
 
-String token = "x";
+String token = "3ffbfb30-aaae-11e8-8e2c-19a3b7904cb9";
 char tokenHex[100];
 uint32_t prev;
 // uint8_t remoteMac[6] = {0x2e, 0x3a, 0xe8, 0x12, 0xbe, 0x92};
@@ -46,6 +48,8 @@ void setup() {
   bzero(&slave, sizeof(slave));
   Serial.begin(115200);
   Serial.println("HELLO..");
+  analogReadResolution(10); // 10Bit resolution
+  analogSetAttenuation(ADC_2_5db);  // 0=0db (0..1V) 1= 2,5dB; 2=-6dB (0..2V); 3=-11dB
   Serial1.begin(9600, SERIAL_8N1, rxPin, txPin, false);
   // Serial1.begin(9600);
 
@@ -179,12 +183,7 @@ void setup() {
 uint32_t lastSentOkMillis;
 unsigned int ct = 1;
 
-void loop() {
-  if ( (millis() - lastSentOkMillis) > 10800 * 1000) {
-    ESP.deepSleep(1e6);
-  }
-  nb.loop();
-  if ( (millis() - msAfterESPNowRecv) > 500 && (pArrIdx > 0) && (isNbConnected)) {
+void generatePacket() {
     static char buffer[600];
     bzero(buffer, sizeof(buffer));
     static char b[300];
@@ -192,11 +191,16 @@ void loop() {
     Serial.printf("pArrIdx = %d\r\n", pArrIdx);
     Serial.println();
     Serial.println(String(ct, HEX));;
+    int analogValue = analogRead(ANALOG_PIN_0);
     for (int i = pArrIdx - 1; i >= 0; i--) {
       digitalWrite(RED_LED, !digitalRead(RED_LED));
       Serial.printf("reading idx = %d\r\n", i);
       toHexString((uint8_t*)  &pArr[i], sizeof(CMMC_PACKET_T), (char*)espnowMsg);
-      sprintf(b, "{\"ct\":\"%lu\", \"sleep\":\"%lu\", \"payload\": \"%s\"}", ct++, currentSleepTimeMinuteByte, espnowMsg);
+      float batt = map(analogValue, 0, 1024, 0, 134); // max=1.34v
+      float batt_percent = map(batt, 0, 116, 0, 100); // devided to 1.16v
+      sprintf(b, "{\"a0\":%d,\"batt\":%s,\"batt_p\":%s,\"ct\":%lu,\"sleep\":%lu,\"payload\":\"%s\"}", analogValue, 
+          String(batt/100).c_str(), String(batt_percent).c_str(), ct++, currentSleepTimeMinuteByte, espnowMsg);
+      Serial.println(b);
       str2Hex(b, buffer);
       sprintf(msgId, "%04lu", ct);
       Serial.printf("msgId = %s\r\n", msgId);
@@ -217,10 +221,6 @@ void loop() {
         ledcWrite(1, 50); 
         if (nb.sendMessageHex(p3.c_str(), 0)) { 
           ledcWrite(1, 0); 
-          delay(100); 
-          ledcWrite(1, 50); 
-          nb.sendMessageHex(p3.c_str(), 0);
-          ledcWrite(1, 0); 
           Serial.println(">> [ais] socket0: send ok.");
           pArrIdx--;
           lastSentOkMillis = millis();
@@ -238,19 +238,20 @@ void loop() {
         }
         delay(200);
       }
-    }
+    } 
+}
+
+void loop() {
+  if ( (millis() - lastSentOkMillis) > 10800 * 1000) {
+    ESP.deepSleep(1e6);
+  }
+  nb.loop();
+  if ( (millis() - msAfterESPNowRecv) > 500 && (pArrIdx > 0) && (isNbConnected)) {
+    generatePacket();
     digitalWrite(RED_LED, LOW);
     prev = millis();
   }
-  // if (millis() - prev > 1000) {
-  //   prev = millis();
-  //   Serial.printf("rate: recv=%lu, sent=%lu hz\r", counter, sentCnt);
-  //   counter = 0;
-  //   sentCnt = 0;
-  // }
-}
-
-
+} 
 
 void str2Hex(const char* text, char* buffer) {
   size_t len = strlen(text);
