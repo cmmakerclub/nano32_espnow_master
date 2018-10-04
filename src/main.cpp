@@ -40,7 +40,7 @@ uint32_t msAfterESPNowRecv = millis();
 bool dirty = false;
 bool isNbConnected = false;
 
-String token = "3ffbfb30-aaae-11e8-8e2c-19a3b7904cb9";
+// String token = "3ffbfb30-aaae-11e8-8e2c-19a3b7904cb9";
 char tokenHex[100];
 uint32_t prev;
 // uint8_t remoteMac[6] = {0x2e, 0x3a, 0xe8, 0x12, 0xbe, 0x92};
@@ -215,7 +215,7 @@ void setup() {
   Serial.print("STA MAC: "); Serial.println(WiFi.macAddress());
   Serial.print("AP MAC: "); Serial.println(WiFi.softAPmacAddress());
 
-  str2Hex(token.c_str(), tokenHex);
+  // str2Hex(token.c_str(), tokenHex);
   Serial.println(tokenHex);
   if (esp_now_init() == ESP_OK) {
     Serial.println("ESPNow Init Success");
@@ -272,7 +272,7 @@ void setup() {
     Serial.println("ms)");
     delay(3000);
     Serial.println(nb.createUdpSocket("103.20.205.85", 5683, UDPConfig::ENABLE_RECV));
-    Serial.println(nb.createUdpSocket("103.212.181.167", 55566, UDPConfig::ENABLE_RECV));
+    // Serial.println(nb.createUdpSocket("103.212.181.167", 55566, UDPConfig::ENABLE_RECV));
     isNbConnected = 1;
     delay(1000);
   });
@@ -341,7 +341,9 @@ void generatePacket() {
 
     // char n[6] = "00000";
     IPAddress ip = IPAddress(103,20,205,85);
+    // 103.20.205.85
     uint8_t _buffer[BUF_MAX_SIZE];
+    char myb[BUF_MAX_SIZE];
     bzero(_buffer, sizeof(_buffer));
     uint16_t buflen = send(_buffer, ip, 5683, "NBIoT/9ee9d8a0-c657-11e8-8443-17f06f0c0a93", COAP_CON, COAP_POST, NULL, 0, (uint8_t*) b, strlen(b)); 
     for (int x = 0; x < buflen; x++) {
@@ -350,23 +352,23 @@ void generatePacket() {
 
     Serial.println(); 
     
-    if (pArrIdx > 0) {
-      for (int i = pArrIdx - 1; i >= 0; i--) {
-        digitalWrite(RED_LED, !digitalRead(RED_LED));
-        Serial.printf("reading idx = %d\r\n", i);
-        toHexString((uint8_t*)  &pArr[i], sizeof(CMMC_PACKET_T), (char*)espnowMsg);
-        Serial.println(b);
-        str2Hex(b, buffer);
-        sprintf(msgId, "%04lu", ct);
-        Serial.printf("msgId = %s\r\n", msgId);
-        String p3 = "";
-        // sendPacket(p3.c_str());
-      } 
-    }
-    else {
-      // sendPacket(_buffer, buflen); 
-      sendPacket("deadbeef", 8);
-    }
+    // if (pArrIdx > 0) {
+    //   for (int i = pArrIdx - 1; i >= 0; i--) {
+    //     digitalWrite(RED_LED, !digitalRead(RED_LED));
+    //     Serial.printf("reading idx = %d\r\n", i);
+    //     toHexString((uint8_t*)  &pArr[i], sizeof(CMMC_PACKET_T), (char*)espnowMsg);
+    //     Serial.println(b);
+    //     str2Hex(b, buffer);
+    //     sprintf(msgId, "%04lu", ct);
+    //     Serial.printf("msgId = %s\r\n", msgId);
+    //     String p3 = "";
+    //     // sendPacket(p3.c_str());
+    //   } 
+    // }
+    // else {
+      memcpy(myb, _buffer, buflen);
+      sendPacket(myb, buflen);
+    // }
 }
 
 void sendPacket(const char *text, int buflen) {
@@ -375,7 +377,6 @@ void sendPacket(const char *text, int buflen) {
     while (true) {
       ledcWrite(1, 50); 
       if (nb.sendMessageHex(text, buflen, 0)) { 
-      // if (nb.sendMessageHex(text, buflen, 0)) { 
         ledcWrite(1, 0); 
         Serial.println(">> [ais] socket0: send ok.");
         pArrIdx--;
@@ -404,10 +405,9 @@ void loop() {
   }
 
 
-  float MINUTE = 0.2;
+  float MINUTE = 0.1;
   int ms = MINUTE *  60 * 1000;
   if ( isNbConnected &&  (millis() - lastSentOkMillis > ms) )  {
-
     Serial.printf("KEEP ALIVE.. %d>%d\r\n", (millis() - lastSentOkMillis), ms);
     generatePacket();
     lastSentOkMillis = millis();

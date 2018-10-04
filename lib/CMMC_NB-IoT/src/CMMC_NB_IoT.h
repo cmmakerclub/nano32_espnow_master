@@ -85,24 +85,25 @@ class CMMC_NB_IoT
           this->_modemSerial = modem->getModemSerial();
         };
 
-        bool sendMessageHex(String payload) { 
-          return send(this->_socketId, _host.c_str(), _port, (uint8_t*)payload.c_str(), payload.length()/2);
+        bool sendMessageHex(const char *payload, uint16_t len) { 
+          Serial.print("UDP:sendMessageHex->");
+          Serial.println(payload);
+          return send(this->_socketId, _host.c_str(), _port, (uint8_t*)payload, len);
         }
-
-        bool sendMessage(String payload) {
-          return this->sendMessage((uint8_t*)payload.c_str(), payload.length());
-        } 
 
         bool send(uint8_t socketId, const char* host, uint16_t port, uint8_t *payload, uint16_t len) {
           char buffer[45];
           sprintf(buffer, "AT+NSOST=%d,%s,%u,%d,", socketId, host, port , len);
+          Serial.print(buffer);
           this->_modemSerial->write((char*)buffer, strlen(buffer)); 
           char t[3];
           while (len--) {
             uint8_t b = *(payload++);
             sprintf(t, "%02x", b);
             this->_modemSerial->write(t, 2);
+            Serial.print(t);
           } 
+          Serial.println();
           this->_modemSerial->write('\r');
           String nbSerialBuffer = "@";
           int ct = 0; 

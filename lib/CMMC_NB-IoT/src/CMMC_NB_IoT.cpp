@@ -210,11 +210,7 @@ Stream* CMMC_NB_IoT::getModemSerial() {
 // }
 
 bool CMMC_NB_IoT::sendMessageHex(const char *msg, uint16_t len, uint8_t socketId) {
-  return this->_socketsMap.valueAt(socketId)->sendMessageHex(msg);
-}
-
-bool CMMC_NB_IoT::sendMessage(uint8_t *msg, size_t len, uint8_t socketId) {
-  return this->_socketsMap.valueAt(socketId)->sendMessage(msg, len);
+  return this->_socketsMap.valueAt(socketId)->sendMessageHex(msg, len);
 }
 
 int CMMC_NB_IoT::createUdpSocket(String hostname, uint16_t port, UDPConfig c) {
