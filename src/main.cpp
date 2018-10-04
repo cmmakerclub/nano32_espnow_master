@@ -34,6 +34,7 @@ void str2Hex(const char* text, char* buffer);
 void toHexString(const uint8_t array[], size_t len, char buffer[]);
 
 uint8_t currentSleepTimeMinuteByte = 5;
+
 uint32_t msAfterESPNowRecv = millis();
 
 bool dirty = false;
@@ -123,7 +124,7 @@ uint16_t generate(uint8_t *buffer, CoapPacket &packet, IPAddress ip, int port) {
     return packetSize;
 }
 
-CoapPacket send(IPAddress ip, int port, char *url, COAP_TYPE type, COAP_METHOD method, uint8_t *token, uint8_t tokenlen, uint8_t *payload, uint32_t payloadlen) {
+uint16_t send(uint8_t *buffer, IPAddress ip, int port, char *url, COAP_TYPE type, COAP_METHOD method, uint8_t *token, uint8_t tokenlen, uint8_t *payload, uint32_t payloadlen) {
     // make packet
     CoapPacket packet;
 
@@ -163,15 +164,14 @@ CoapPacket send(IPAddress ip, int port, char *url, COAP_TYPE type, COAP_METHOD m
     }
 
     // send packet
-    Serial.println("generate");
-    uint8_t buffer[BUF_MAX_SIZE];
-    bzero(buffer, sizeof(buffer));
+
+
     uint16_t s = generate(buffer, packet, ip, port); 
-    Serial.printf("packet len=%d\r\n", s);
-    for (int i = 0 ; i < s; i++) {
-      Serial.printf("%02x", buffer[i]);
-    }
-    return packet;
+    // Serial.printf("packet len=%d\r\n", s);
+    // for (int i = 0 ; i < s; i++) {
+    //   Serial.printf("%02x", buffer[i]);
+    // }
+    return s;
 }
 
 CoapPacket p;
@@ -200,12 +200,10 @@ void setup() {
   pinMode(RED_LED, OUTPUT);
 
   digitalWrite(GREEN_LED, HIGH);
-  digitalWrite(RED_LED, HIGH);
+  digitalWrite(RED_LED, HIGH); 
 
-  IPAddress ip = IPAddress(192, 168, 1, 0);
-
-    char n[6] = "00000";
-  p = send(ip, 33649, "NBIoT/9ee9d8a0-c657-11e8-8443-17f06f0c0a93", COAP_CON, COAP_POST, NULL, 0, (uint8_t*) n, strlen(n));
+  // char n[6] = "00000";
+  // p = send(ip, 33649, "NBIoT/9ee9d8a0-c657-11e8-8443-17f06f0c0a93", COAP_CON, COAP_POST, NULL, 0, (uint8_t*) n, strlen(n));
 
 
   Serial.println("");
@@ -267,7 +265,6 @@ void setup() {
 
   nb.onConnected([]() {
     ledcWrite(1, 0);
-    Serial.println(F("[user] Device rebooted."));
     digitalWrite(RED_LED, HIGH);
     digitalWrite(GREEN_LED, HIGH);
     Serial.print("[user] NB-IoT Network connected at (");
@@ -284,7 +281,7 @@ void setup() {
   delay(2000);
   Serial.println("Rebooting module"); 
   nb.hello(); 
-  nb.rebootModule(); 
+  // nb.rebootModule(); 
 
   esp_now_register_send_cb([&] (const uint8_t *mac_addr, esp_now_send_status_t status) {
     sentCnt++;
@@ -325,77 +322,103 @@ void setup() {
 
 }
 
-uint32_t lastSentOkMillis;
-unsigned int ct = 1;
+uint32_t lastSentOkMillis = millis();
+unsigned int ct = 1; 
+void sendPacket(const char *text, int buflen) ;
 
 void generatePacket() {
     static char buffer[600];
     bzero(buffer, sizeof(buffer));
     static char b[300];
     static char msgId[5];
-    Serial.printf("pArrIdx = %d\r\n", pArrIdx);
-    Serial.println();
-    Serial.println(String(ct, HEX));;
+    Serial.printf("pArrIdx = %d, ct=%d\r\n", pArrIdx, ct);
     int analogValue = analogRead(ANALOG_PIN_0);
-    for (int i = pArrIdx - 1; i >= 0; i--) {
-      digitalWrite(RED_LED, !digitalRead(RED_LED));
-      Serial.printf("reading idx = %d\r\n", i);
-      toHexString((uint8_t*)  &pArr[i], sizeof(CMMC_PACKET_T), (char*)espnowMsg);
-      float batt = map(analogValue, 0, 1024, 0, 134); // max=1.34v
-      float batt_percent = map(batt, 0, 116, 0, 100); // devided to 1.16v
-      sprintf(b, "{\"a0\":%d,\"batt\":%s,\"batt_p\":%s,\"ct\":%lu,\"sleep\":%lu,\"payload\":\"%s\"}", analogValue, 
+    float batt = map(analogValue, 0, 1024, 0, 134); // max=1.34v
+    float batt_percent = map(batt, 0, 116, 0, 100); // devided to 1.16v
+    sprintf(b, "{\"a0\":%d,\"batt\":%s,\"batt_p\":%s,\"ct\":%lu,\"sleep\":%lu,\"payload\":\"%s\"}", analogValue, 
           String(batt/100).c_str(), String(batt_percent).c_str(), ct++, currentSleepTimeMinuteByte, espnowMsg);
-      Serial.println(b);
-      str2Hex(b, buffer);
-      sprintf(msgId, "%04lu", ct);
-      Serial.printf("msgId = %s\r\n", msgId);
-      String p3 = "";
-      p3 += String("40");
-      p3 += String("02");
-      p3 += String(msgId);
-      p3 += String("b5");
-      p3 += String("4e42496f54"); // NB-IoT
-      p3 += String("0d");
-      p3 += String("17");
-      p3 +=  String(tokenHex);
-      p3 += String("ff");
-      p3 += String(buffer);
-      // Serial.println(p3);
-      int rt = 0;
-      while (true) {
-        ledcWrite(1, 50); 
-        if (nb.sendMessageHex(p3.c_str(), 0)) { 
-          ledcWrite(1, 0); 
-          Serial.println(">> [ais] socket0: send ok.");
-          pArrIdx--;
-          lastSentOkMillis = millis();
+    Serial.println(b);
+
+    // char n[6] = "00000";
+    IPAddress ip = IPAddress(103,20,205,85);
+    uint8_t _buffer[BUF_MAX_SIZE];
+    bzero(_buffer, sizeof(_buffer));
+    uint16_t buflen = send(_buffer, ip, 5683, "NBIoT/9ee9d8a0-c657-11e8-8443-17f06f0c0a93", COAP_CON, COAP_POST, NULL, 0, (uint8_t*) b, strlen(b)); 
+    for (int x = 0; x < buflen; x++) {
+      Serial.printf("%02x", _buffer[x]); 
+    }
+
+    Serial.println(); 
+    
+    if (pArrIdx > 0) {
+      for (int i = pArrIdx - 1; i >= 0; i--) {
+        digitalWrite(RED_LED, !digitalRead(RED_LED));
+        Serial.printf("reading idx = %d\r\n", i);
+        toHexString((uint8_t*)  &pArr[i], sizeof(CMMC_PACKET_T), (char*)espnowMsg);
+        Serial.println(b);
+        str2Hex(b, buffer);
+        sprintf(msgId, "%04lu", ct);
+        Serial.printf("msgId = %s\r\n", msgId);
+        String p3 = "";
+        // sendPacket(p3.c_str());
+      } 
+    }
+    else {
+      // sendPacket(_buffer, buflen); 
+      sendPacket("deadbeef", 8);
+    }
+}
+
+void sendPacket(const char *text, int buflen) {
+    int rt = 0;
+    String s = String((char*)text);
+    while (true) {
+      ledcWrite(1, 50); 
+      if (nb.sendMessageHex(text, buflen, 0)) { 
+      // if (nb.sendMessageHex(text, buflen, 0)) { 
+        ledcWrite(1, 0); 
+        Serial.println(">> [ais] socket0: send ok.");
+        pArrIdx--;
+        lastSentOkMillis = millis();
+        delay(100);
+        break;
+      }
+      else {
+        Serial.println(">> [ais] socket0: send failed.");
+        if (++rt > 5) {
+          delay(100);
+          ESP.deepSleep(1e6);
           delay(100);
           break;
         }
-        else {
-          Serial.println(">> [ais] socket0: send failed.");
-          if (++rt > 5) {
-            delay(100);
-            ESP.deepSleep(1e6);
-            delay(100);
-            break;
-          }
-        }
-        delay(200);
       }
+      delay(200);
     } 
 }
 
 void loop() {
+  nb.loop();
+
   if ( (millis() - lastSentOkMillis) > 10800 * 1000) {
     ESP.deepSleep(1e6);
   }
-  nb.loop();
+
+
+  float MINUTE = 0.2;
+  int ms = MINUTE *  60 * 1000;
+  if ( isNbConnected &&  (millis() - lastSentOkMillis > ms) )  {
+
+    Serial.printf("KEEP ALIVE.. %d>%d\r\n", (millis() - lastSentOkMillis), ms);
+    generatePacket();
+    lastSentOkMillis = millis();
+  }
+
   if ( (millis() - msAfterESPNowRecv) > 500 && (pArrIdx > 0) && (isNbConnected)) {
     generatePacket();
     digitalWrite(RED_LED, LOW);
     prev = millis();
   }
+
 } 
 
 void str2Hex(const char* text, char* buffer) {
