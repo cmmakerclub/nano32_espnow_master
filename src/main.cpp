@@ -3,10 +3,12 @@
 #include <WiFi.h>
 #include <CMMC_NB_IoT.h>
 #include "data_type.h"
-#include "soc/soc.h"
-#include "soc/rtc_cntl_reg.h"
+#include "coap.h"
 
-HardwareSerial Serial1(2);
+// #include "soc/soc.h"
+// #include "soc/rtc_cntl_reg.h"
+
+HardwareSerial mySerial1(2);
 CMMC_PACKET_T pArr[60];
 int pArrIdx = 0;
 char espnowMsg[300];
@@ -24,7 +26,7 @@ char espnowMsg[300];
 
 #define LED_PIN
 
-CMMC_NB_IoT nb(&Serial1);
+CMMC_NB_IoT nb(&mySerial1);
 uint32_t counter = 0;
 uint32_t sentCnt = 0;
 
@@ -43,14 +45,146 @@ uint32_t prev;
 // uint8_t remoteMac[6] = {0x2e, 0x3a, 0xe8, 0x12, 0xbe, 0x92};
 esp_now_peer_info_t slave;
 
+// CoapPacket packet; 
+
+uint16_t generate(uint8_t *buffer, CoapPacket &packet, IPAddress ip, int port) {
+    uint8_t *p = buffer;
+    uint16_t running_delta = 0;
+    uint16_t packetSize = 0;
+
+    // make coap packet base header
+    *p = 0x01 << 6;
+    *p |= (packet.type & 0x03) << 4;
+    *p++ |= (packet.tokenlen & 0x0F);
+    *p++ = packet.code;
+    *p++ = (packet.messageid >> 8);
+    *p++ = (packet.messageid & 0xFF);
+    p = buffer + COAP_HEADER_SIZE;
+    packetSize += 4;
+
+    // make token
+    if (packet.token != NULL && packet.tokenlen <= 0x0F) {
+        memcpy(p, packet.token, packet.tokenlen);
+        p += packet.tokenlen;
+        packetSize += packet.tokenlen;
+    }
+
+    // make option header
+    for (int i = 0; i < packet.optionnum; i++)  {
+        uint32_t optdelta;
+        uint8_t len, delta;
+
+        if (packetSize + 5 + packet.options[i].length >= BUF_MAX_SIZE) {
+            return 0;
+        }
+        optdelta = packet.options[i].number - running_delta;
+        COAP_OPTION_DELTA(optdelta, &delta);
+        COAP_OPTION_DELTA((uint32_t)packet.options[i].length, &len);
+
+        *p++ = (0xFF & (delta << 4 | len));
+        if (delta == 13) {
+            *p++ = (optdelta - 13);
+            packetSize++;
+        } else if (delta == 14) {
+            *p++ = ((optdelta - 269) >> 8);
+            *p++ = (0xFF & (optdelta - 269));
+            packetSize+=2;
+        } if (len == 13) {
+            *p++ = (packet.options[i].length - 13);
+            packetSize++;
+        } else if (len == 14) {
+            *p++ = (packet.options[i].length >> 8);
+            *p++ = (0xFF & (packet.options[i].length - 269));
+            packetSize+=2;
+        }
+
+        memcpy(p, packet.options[i].buffer, packet.options[i].length);
+        p += packet.options[i].length;
+        packetSize += packet.options[i].length + 1;
+        running_delta = packet.options[i].number;
+    }
+
+    // make payload
+    if (packet.payloadlen > 0) {
+        if ((packetSize + 1 + packet.payloadlen) >= BUF_MAX_SIZE) {
+            return 0;
+        }
+        *p++ = 0xFF;
+        memcpy(p, packet.payload, packet.payloadlen);
+        packetSize += 1 + packet.payloadlen;
+    }
+
+    Serial.println("dump");
+     for (int i = 0 ; i < sizeof(buffer); i++) {
+      Serial.printf("%02x", buffer[i]);
+    }
+    Serial.println();
+    Serial.println("DONE");
+    return packetSize;
+}
+
+CoapPacket send(IPAddress ip, int port, char *url, COAP_TYPE type, COAP_METHOD method, uint8_t *token, uint8_t tokenlen, uint8_t *payload, uint32_t payloadlen) {
+    // make packet
+    CoapPacket packet;
+
+    packet.type = type;
+    packet.code = method;
+    packet.token = token;
+    packet.tokenlen = tokenlen;
+    packet.payload = payload;
+    packet.payloadlen = payloadlen;
+    packet.optionnum = 0;
+    packet.messageid = rand();
+
+    // use URI_HOST URI_PATH
+    String ipaddress = String(ip[0]) + String(".") + String(ip[1]) + String(".") + String(ip[2]) + String(".") + String(ip[3]); 
+    packet.options[packet.optionnum].buffer = (uint8_t *)ipaddress.c_str();
+    packet.options[packet.optionnum].length = ipaddress.length();
+    packet.options[packet.optionnum].number = COAP_URI_HOST;
+    packet.optionnum++;
+
+    // parse url
+    int idx = 0;
+    for (int i = 0; i < strlen(url); i++) {
+        if (url[i] == '/') {
+            packet.options[packet.optionnum].buffer = (uint8_t *)(url + idx);
+            packet.options[packet.optionnum].length = i - idx;
+            packet.options[packet.optionnum].number = COAP_URI_PATH;
+            packet.optionnum++;
+            idx = i + 1;
+        }
+    }
+
+    if (idx <= strlen(url)) {
+        packet.options[packet.optionnum].buffer = (uint8_t *)(url + idx);
+        packet.options[packet.optionnum].length = strlen(url) - idx;
+        packet.options[packet.optionnum].number = COAP_URI_PATH;
+        packet.optionnum++;
+    }
+
+    // send packet
+    Serial.println("generate");
+    uint8_t buffer[BUF_MAX_SIZE];
+    bzero(buffer, sizeof(buffer));
+    uint16_t s = generate(buffer, packet, ip, port); 
+    Serial.printf("packet len=%d\r\n", s);
+    for (int i = 0 ; i < s; i++) {
+      Serial.printf("%02x", buffer[i]);
+    }
+    return packet;
+}
+
+CoapPacket p;
+
 void setup() {
-  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector
+  // WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector
   bzero(&slave, sizeof(slave));
   Serial.begin(115200);
+  mySerial1.begin(9600);
   Serial.println("HELLO..");
   analogReadResolution(10); // 10Bit resolution
   analogSetAttenuation(ADC_2_5db);  // 0=0db (0..1V) 1= 2,5dB; 2=-6dB (0..2V); 3=-11dB
-  Serial1.begin(9600, SERIAL_8N1, rxPin, txPin, false);
+  // Serial1.begin(9600, SERIAL_8N1, rxPin, txPin, false);
   // Serial1.begin(9600);
 
   pinMode(RESET_PIN, OUTPUT);
@@ -68,8 +202,14 @@ void setup() {
   digitalWrite(GREEN_LED, HIGH);
   digitalWrite(RED_LED, HIGH);
 
+  IPAddress ip = IPAddress(192, 168, 1, 0);
 
-  Serial.println("Serial1..");
+    char n[6] = "00000";
+  p = send(ip, 33649, "NBIoT/9ee9d8a0-c657-11e8-8443-17f06f0c0a93", COAP_CON, COAP_POST, NULL, 0, (uint8_t*) n, strlen(n));
+
+
+  Serial.println("");
+  Serial.println("/COAP PACKET..");
   WiFi.disconnect(); 
   WiFi.mode(WIFI_AP_STA);
   delay(200);
@@ -86,16 +226,18 @@ void setup() {
     Serial.println("ESPNow Init Failed");
     ESP.restart();
   }
-  delay(100);
-  nb.setDebugStream(&Serial);
 
+  delay(100); 
+  nb.setDebugStream(&Serial); 
   nb.onDeviceReboot([]() {
     ledcWrite(1, 0);
     Serial.println(F("[user] Device rebooted."));
     digitalWrite(GREEN_LED, LOW);
     digitalWrite(RED_LED, LOW);
     delay(2000);
-  }); nb.onDeviceReady([]() {
+  }); 
+  
+  nb.onDeviceReady([]() {
     Serial.println("[user] Device Ready!");
   });
 
@@ -140,7 +282,10 @@ void setup() {
 
   Serial.println("WAIT... 2s");
   delay(2000);
+  Serial.println("Rebooting module"); 
+  nb.hello(); 
   nb.rebootModule(); 
+
   esp_now_register_send_cb([&] (const uint8_t *mac_addr, esp_now_send_status_t status) {
     sentCnt++;
   });
