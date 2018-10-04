@@ -132,82 +132,14 @@ void CMMC_NB_IoT::loop() {
         Serial.println(response);
         Serial.println(response.length());
         Serial.println("===================");
-        // sprintf(buf, "AT+NSORF=%u,%d", 0, 100); 
-        // this->_writeCommand(buf, 10L, buf2, false);
-        // Serial.printf(buf2); 
-      // if (sscanf(response.c_str(), "+NSONMI:%u,%d", &socketId, &dataLen) == 2) {
-      //   sprintf(buf, "AT+NSORF=%u,%d", socketId, dataLen); 
-      //   this->_writeCommand(buf, 10L, buf2, true);
-      //   // Serial.println(buf2);
-      // //   //  0,103.212.181.167, //           52621, //               12,48454C4C4F2E2E3432383735, //                        12OK
-      //     if (sscanf(buf2, "%u,%[^,],%u,%u,%[^,],%uOK%n", &socketId, &ip, &port, &length, data, &remainingLength) == 6) {
-      //       String buf2String = String(data);
-      //       int idx = 0;
-      //       char dbuf[length + 1];
-      //       strcpy(dbuf , "");
-      //       for (size_t i = 0; i < length * 2; i += 2) {
-      //         String t = buf2String.substring(i, i + 2);
-      //         long li = strtol(t.c_str(), NULL, 16);
-      //         dbuf[idx++] = li;
-      //         // Serial.print(li);
-      //       }
-      //       // Serial.print("> RECV: ");
-      //       // Serial.print(dbuf);
-      //       // Serial.print(" [at ");
-      //       // Serial.print(millis());
-      //       // Serial.println(" ms]");
-      //       // Serial.println("=================");
-      //       if (_user_onMessage_cb != NULL) {
-      //         _user_onMessage_cb(dbuf, strlen(dbuf), socketId, ip, port);
-      //       }
-      //     } 
-      //     if (sscanf(buf2, "+NSONMI:%u,%d,%[^,],%u,%u,%[^,],%uOK%n", &socketId, &dataLen, &ip, &port, &length, data, &remainingLength) == 7) {
-      //       Serial.println("kkkkkkkkkkkkkkk");
-      //       // String buf2String = String(data); 
-      //       // Serial.println(buf2String);
-      //     } 
-      //     delay(100);
-      //   }
       }
-    }
-
-    // if (sscanf(buf2, "+NSONMI:%u,%d,%[^,],%u,%u,%[^,],%uOK%n", &socketId,
-    //   &dataLen, &ip, &port, &length, data, &remainingLength) == 7) {
-    //   String buf2String = String(data);
-    //   // Serial.println(length);
-    //   // Serial.println(buf2String);
-    //   // Serial.println(data);
-    //   Serial.print("message arrived: ");
-    //   Serial.println(socketId);
-    //   int idx = 0;
-    //   char dbuf[length+1] = {0};
-    //   strcpy(dbuf , "");
-    //   for (size_t i = 0; i < length*2; i += 2) {
-    //     String t = buf2String.substring(i, i+2);
-    //     long li = strtol(t.c_str(), NULL, 16);
-    //     dbuf[idx++] = li;
-    //     Serial.print(li);
-    //   }
-    //   // Serial.print("[2] > RECV: ");
-    //   // Serial.print(dbuf);
-    //   // Serial.print(" [at ");
-    //   // Serial.print(millis());
-    //   // Serial.println(" ms]");
-    //   // Serial.println("=================");
-    //   if (_user_onMessage_cb != NULL) {
-    //     _user_onMessage_cb(dbuf, strlen(dbuf));
-    //   }
-    // }
+    } 
   }
 }
 
 Stream* CMMC_NB_IoT::getModemSerial() {
   return this->_modemSerial;
 }
-
-// bool CMMC_NB_IoT::sendMessage(String msg, uint8_t socketId) {
-//   return this->_socketsMap.valueAt(socketId)->sendMessage(msg);
-// }
 
 bool CMMC_NB_IoT::sendMessageHex(const char *msg, uint16_t len, uint8_t socketId) {
   return this->_socketsMap.valueAt(socketId)->sendMessageHex(msg, len);
