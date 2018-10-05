@@ -86,8 +86,6 @@ class CMMC_NB_IoT
         };
 
         bool sendMessageHex(const char *payload, uint16_t len) { 
-          Serial.print("UDP:sendMessageHex->");
-          Serial.println(payload);
           return send(this->_socketId, _host.c_str(), _port, (uint8_t*)payload, len);
         }
 

@@ -4,6 +4,7 @@
 #include <CMMC_NB_IoT.h>
 #include "data_type.h"
 #include "coap.h"
+#include "coap-helper.h"
 
 // #include "soc/soc.h"
 // #include "soc/rtc_cntl_reg.h"
@@ -46,134 +47,6 @@ uint32_t prev;
 // uint8_t remoteMac[6] = {0x2e, 0x3a, 0xe8, 0x12, 0xbe, 0x92};
 esp_now_peer_info_t slave;
 
-// CoapPacket packet; 
-
-uint16_t generate(uint8_t *buffer, CoapPacket &packet, IPAddress ip, int port) {
-    uint8_t *p = buffer;
-    uint16_t running_delta = 0;
-    uint16_t packetSize = 0;
-
-    // make coap packet base header
-    *p = 0x01 << 6;
-    *p |= (packet.type & 0x03) << 4;
-    *p++ |= (packet.tokenlen & 0x0F);
-    *p++ = packet.code;
-    *p++ = (packet.messageid >> 8);
-    *p++ = (packet.messageid & 0xFF);
-    p = buffer + COAP_HEADER_SIZE;
-    packetSize += 4;
-
-    // make token
-    if (packet.token != NULL && packet.tokenlen <= 0x0F) {
-        memcpy(p, packet.token, packet.tokenlen);
-        p += packet.tokenlen;
-        packetSize += packet.tokenlen;
-    }
-
-    // make option header
-    for (int i = 0; i < packet.optionnum; i++)  {
-        uint32_t optdelta;
-        uint8_t len, delta;
-
-        if (packetSize + 5 + packet.options[i].length >= BUF_MAX_SIZE) {
-            return 0;
-        }
-        optdelta = packet.options[i].number - running_delta;
-        COAP_OPTION_DELTA(optdelta, &delta);
-        COAP_OPTION_DELTA((uint32_t)packet.options[i].length, &len);
-
-        *p++ = (0xFF & (delta << 4 | len));
-        if (delta == 13) {
-            *p++ = (optdelta - 13);
-            packetSize++;
-        } else if (delta == 14) {
-            *p++ = ((optdelta - 269) >> 8);
-            *p++ = (0xFF & (optdelta - 269));
-            packetSize+=2;
-        } if (len == 13) {
-            *p++ = (packet.options[i].length - 13);
-            packetSize++;
-        } else if (len == 14) {
-            *p++ = (packet.options[i].length >> 8);
-            *p++ = (0xFF & (packet.options[i].length - 269));
-            packetSize+=2;
-        }
-
-        memcpy(p, packet.options[i].buffer, packet.options[i].length);
-        p += packet.options[i].length;
-        packetSize += packet.options[i].length + 1;
-        running_delta = packet.options[i].number;
-    }
-
-    // make payload
-    if (packet.payloadlen > 0) {
-        if ((packetSize + 1 + packet.payloadlen) >= BUF_MAX_SIZE) {
-            return 0;
-        }
-        *p++ = 0xFF;
-        memcpy(p, packet.payload, packet.payloadlen);
-        packetSize += 1 + packet.payloadlen;
-    }
-
-    Serial.println("dump");
-     for (int i = 0 ; i < sizeof(buffer); i++) {
-      Serial.printf("%02x", buffer[i]);
-    }
-    Serial.println();
-    Serial.println("DONE");
-    return packetSize;
-}
-
-uint16_t send(uint8_t *buffer, IPAddress ip, int port, char *url, COAP_TYPE type, COAP_METHOD method, uint8_t *token, uint8_t tokenlen, uint8_t *payload, uint32_t payloadlen) {
-    // make packet
-    CoapPacket packet;
-
-    packet.type = type;
-    packet.code = method;
-    packet.token = token;
-    packet.tokenlen = tokenlen;
-    packet.payload = payload;
-    packet.payloadlen = payloadlen;
-    packet.optionnum = 0;
-    packet.messageid = rand();
-
-    // use URI_HOST URI_PATH
-    String ipaddress = String(ip[0]) + String(".") + String(ip[1]) + String(".") + String(ip[2]) + String(".") + String(ip[3]); 
-    packet.options[packet.optionnum].buffer = (uint8_t *)ipaddress.c_str();
-    packet.options[packet.optionnum].length = ipaddress.length();
-    packet.options[packet.optionnum].number = COAP_URI_HOST;
-    packet.optionnum++;
-
-    // parse url
-    int idx = 0;
-    for (int i = 0; i < strlen(url); i++) {
-        if (url[i] == '/') {
-            packet.options[packet.optionnum].buffer = (uint8_t *)(url + idx);
-            packet.options[packet.optionnum].length = i - idx;
-            packet.options[packet.optionnum].number = COAP_URI_PATH;
-            packet.optionnum++;
-            idx = i + 1;
-        }
-    }
-
-    if (idx <= strlen(url)) {
-        packet.options[packet.optionnum].buffer = (uint8_t *)(url + idx);
-        packet.options[packet.optionnum].length = strlen(url) - idx;
-        packet.options[packet.optionnum].number = COAP_URI_PATH;
-        packet.optionnum++;
-    }
-
-    // send packet
-
-
-    uint16_t s = generate(buffer, packet, ip, port); 
-    // Serial.printf("packet len=%d\r\n", s);
-    // for (int i = 0 ; i < s; i++) {
-    //   Serial.printf("%02x", buffer[i]);
-    // }
-    return s;
-}
-
 CoapPacket p;
 
 void setup() {
@@ -201,10 +74,6 @@ void setup() {
 
   digitalWrite(GREEN_LED, HIGH);
   digitalWrite(RED_LED, HIGH); 
-
-  // char n[6] = "00000";
-  // p = send(ip, 33649, "NBIoT/9ee9d8a0-c657-11e8-8443-17f06f0c0a93", COAP_CON, COAP_POST, NULL, 0, (uint8_t*) n, strlen(n));
-
 
   Serial.println("");
   Serial.println("/COAP PACKET..");
@@ -280,8 +149,9 @@ void setup() {
   Serial.println("WAIT... 2s");
   delay(2000);
   Serial.println("Rebooting module"); 
+  
   nb.hello(); 
-  // nb.rebootModule(); 
+  nb.rebootModule(); 
 
   esp_now_register_send_cb([&] (const uint8_t *mac_addr, esp_now_send_status_t status) {
     sentCnt++;
@@ -331,7 +201,7 @@ void generatePacket() {
     bzero(buffer, sizeof(buffer));
     static char b[300];
     static char msgId[5];
-    Serial.printf("pArrIdx = %d, ct=%d\r\n", pArrIdx, ct);
+    Serial.printf("pArrIdx=%d, ct=%d\r\n", pArrIdx, ct);
     int analogValue = analogRead(ANALOG_PIN_0);
     float batt = map(analogValue, 0, 1024, 0, 134); // max=1.34v
     float batt_percent = map(batt, 0, 116, 0, 100); // devided to 1.16v
@@ -339,47 +209,42 @@ void generatePacket() {
           String(batt/100).c_str(), String(batt_percent).c_str(), ct++, currentSleepTimeMinuteByte, espnowMsg);
     Serial.println(b);
 
-    // char n[6] = "00000";
     IPAddress ip = IPAddress(103,20,205,85);
-    // 103.20.205.85
     uint8_t _buffer[BUF_MAX_SIZE];
     char myb[BUF_MAX_SIZE];
     bzero(_buffer, sizeof(_buffer));
     uint16_t buflen = send(_buffer, ip, 5683, "NBIoT/9ee9d8a0-c657-11e8-8443-17f06f0c0a93", COAP_CON, COAP_POST, NULL, 0, (uint8_t*) b, strlen(b)); 
-    for (int x = 0; x < buflen; x++) {
-      Serial.printf("%02x", _buffer[x]); 
-    }
-
-    Serial.println(); 
+    // for (int x = 0; x < buflen; x++) {
+    //   Serial.printf("%02x", _buffer[x]); 
+    // } 
+    // Serial.println(); 
     
-    // if (pArrIdx > 0) {
-    //   for (int i = pArrIdx - 1; i >= 0; i--) {
-    //     digitalWrite(RED_LED, !digitalRead(RED_LED));
-    //     Serial.printf("reading idx = %d\r\n", i);
-    //     toHexString((uint8_t*)  &pArr[i], sizeof(CMMC_PACKET_T), (char*)espnowMsg);
-    //     Serial.println(b);
-    //     str2Hex(b, buffer);
-    //     sprintf(msgId, "%04lu", ct);
-    //     Serial.printf("msgId = %s\r\n", msgId);
-    //     String p3 = "";
-    //     // sendPacket(p3.c_str());
-    //   } 
-    // }
-    // else {
+    if (pArrIdx > 0) {
+      for (int i = pArrIdx - 1; i >= 0; i--) {
+        digitalWrite(RED_LED, !digitalRead(RED_LED));
+        Serial.printf("reading idx = %d\r\n", i);
+        toHexString((uint8_t*)  &pArr[i], sizeof(CMMC_PACKET_T), (char*)espnowMsg);
+        // Serial.println(b);
+        // str2Hex(b, buffer);
+        // sprintf(msgId, "%04lu", ct);
+        // Serial.printf("msgId = %s\r\n", msgId);
+        // String p3 = "";
+        // sendPacket(p3.c_str());
+      } 
+    }
+    else {
       memcpy(myb, _buffer, buflen);
       sendPacket(myb, buflen);
-    // }
+    }
 }
 
 void sendPacket(const char *text, int buflen) {
     int rt = 0;
-    String s = String((char*)text);
     while (true) {
       ledcWrite(1, 50); 
       if (nb.sendMessageHex(text, buflen, 0)) { 
         ledcWrite(1, 0); 
         Serial.println(">> [ais] socket0: send ok.");
-        pArrIdx--;
         lastSentOkMillis = millis();
         delay(100);
         break;
