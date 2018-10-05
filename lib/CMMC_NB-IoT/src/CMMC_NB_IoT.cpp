@@ -151,9 +151,13 @@ int CMMC_NB_IoT::createUdpSocket(String hostname, uint16_t port, UDPConfig c) {
   char resBuffer[40];
   char buffer[60];
   randomSeed(analogRead(0));
-  Serial.print("notification config = ");
   sprintf(buffer, "AT+NSOCR=DGRAM,17,%u,0", random(6000, 50000));
-  Serial.println(buffer);
+  Serial.printf("notification config = %s\n", buffer);
+  callCommand("AT+NSOCL=5");
+  callCommand("AT+NSOCL=4");
+  callCommand("AT+NSOCL=3");
+  callCommand("AT+NSOCL=2");
+  callCommand("AT+NSOCL=1");
   if (callCommand(buffer, 10, 5, resBuffer)) {
     if (!this->_socketsMap.contains(hashKey)) {
       debugPrint("socket id=");

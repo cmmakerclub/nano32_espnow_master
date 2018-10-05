@@ -7,7 +7,10 @@
 #include "coap-helper.h"
 
 // #include "soc/soc.h"
-// #include "soc/rtc_cntl_reg.h"
+// #include "soc/rtc_cntl_reg.h" 
+// #define AIS_TOKEN "9ee9d8a0-c657-11e8-8443-17f06f0c0a93" 
+#define AIS_TOKEN "3ffbfb30-aaae-11e8-8e2c-19a3b7904cb9" // MITTY-V1
+#define DEBUG_PACKET 0 
 
 HardwareSerial mySerial1(2);
 CMMC_PACKET_T pArr[60];
@@ -34,15 +37,12 @@ uint32_t sentCnt = 0;
 void str2Hex(const char* text, char* buffer);
 void toHexString(const uint8_t array[], size_t len, char buffer[]);
 
-uint8_t currentSleepTimeMinuteByte = 5;
-
+uint8_t currentSleepTimeMinuteByte = 5; 
 uint32_t msAfterESPNowRecv = millis();
 
 bool dirty = false;
 bool isNbConnected = false;
 
-// String token = "3ffbfb30-aaae-11e8-8e2c-19a3b7904cb9";
-char tokenHex[100];
 uint32_t prev;
 // uint8_t remoteMac[6] = {0x2e, 0x3a, 0xe8, 0x12, 0xbe, 0x92};
 esp_now_peer_info_t slave;
@@ -54,19 +54,20 @@ void setup() {
   bzero(&slave, sizeof(slave));
   Serial.begin(115200);
   mySerial1.begin(9600);
-  Serial.println("HELLO..");
+
   analogReadResolution(10); // 10Bit resolution
   analogSetAttenuation(ADC_2_5db);  // 0=0db (0..1V) 1= 2,5dB; 2=-6dB (0..2V); 3=-11dB
-  // Serial1.begin(9600, SERIAL_8N1, rxPin, txPin, false);
-  // Serial1.begin(9600);
 
-  pinMode(RESET_PIN, OUTPUT);
+  printf("RESETTING NB-IoT Shield...");
+  pinMode(RESET_PIN, OUTPUT); 
   digitalWrite(RESET_PIN, HIGH);
   delay(100);
   digitalWrite(RESET_PIN, LOW);
-  delay(100); 
+  delay(1000); 
   ledcAttachPin(BOARD_LED, 1);
+  printf("\ndone.");
 
+  printf("Configuring LED\n"); 
   ledcSetup(1, 12000, 8);
   ledcWrite(1, 20);
   pinMode(GREEN_LED, OUTPUT);
@@ -74,23 +75,20 @@ void setup() {
 
   digitalWrite(GREEN_LED, HIGH);
   digitalWrite(RED_LED, HIGH); 
-
-  Serial.println("");
-  Serial.println("/COAP PACKET..");
+  printf("Disconnecting WiFi...\n");
   WiFi.disconnect(); 
+  printf("SET WiFi Mode=WIFI_AP_STA\n");
   WiFi.mode(WIFI_AP_STA);
   delay(200);
-  Serial.println("[2]..");
-  Serial.print("STA MAC: "); Serial.println(WiFi.macAddress());
-  Serial.print("AP MAC: "); Serial.println(WiFi.softAPmacAddress());
+  Serial.printf("STA MAC: %s\r\n", WiFi.macAddress().c_str());
+  Serial.printf(" AP MAC: %s\r\n", WiFi.softAPmacAddress().c_str());
+  delay(1000);
 
-  // str2Hex(token.c_str(), tokenHex);
-  Serial.println(tokenHex);
   if (esp_now_init() == ESP_OK) {
-    Serial.println("ESPNow Init Success");
+    printf("ESPNow Init Success\n");
   }
   else {
-    Serial.println("ESPNow Init Failed");
+    printf("ESPNow Init Failed\n");
     ESP.restart();
   }
 
@@ -139,9 +137,7 @@ void setup() {
     Serial.print("[user] NB-IoT Network connected at (");
     Serial.print(millis());
     Serial.println("ms)");
-    delay(3000);
-    Serial.println(nb.createUdpSocket("103.20.205.85", 5683, UDPConfig::ENABLE_RECV));
-    // Serial.println(nb.createUdpSocket("103.212.181.167", 55566, UDPConfig::ENABLE_RECV));
+    nb.createUdpSocket("103.20.205.85", 5683, UDPConfig::ENABLE_RECV);
     isNbConnected = 1;
     delay(1000);
   });
@@ -151,13 +147,17 @@ void setup() {
   Serial.println("Rebooting module"); 
   
   nb.hello(); 
-  nb.rebootModule(); 
+  // nb.rebootModule(); 
 
   esp_now_register_send_cb([&] (const uint8_t *mac_addr, esp_now_send_status_t status) {
     sentCnt++;
   });
 
-  esp_now_register_recv_cb([&](const uint8_t *mac_addr, const uint8_t *data, int data_len) {
+  esp_now_register_recv_cb([&](const uint8_t *mac_addr, const uint8_t *data, int data_len) { 
+    int pArrIdxCurr = pArrIdx;
+    pArrIdx = (pArrIdx + 1) % 30; 
+    printf("=====================\n");
+    printf("RECV ESPNow Data pArrIdx=%d\n", pArrIdx);
     digitalWrite(GREEN_LED, !digitalRead(GREEN_LED));
     memcpy(&slave.peer_addr, mac_addr, 6);
     CMMC_PACKET_T wrapped;
@@ -170,21 +170,34 @@ void setup() {
     wrapped.ms = millis();
     wrapped.sum = counter;
 
-    pArr[pArrIdx] = wrapped;
-    pArrIdx = (pArrIdx + 1) % 30;
+    pArr[pArrIdxCurr] = wrapped;
 
     esp_now_send(mac_addr, &currentSleepTimeMinuteByte, 1);
-    Serial.printf("(uint32_t) sleepTime = %lu\r\n", (uint32_t) currentSleepTimeMinuteByte);
+    printf("sending back sleepTime=%lu", currentSleepTimeMinuteByte);
+    printf("\n=====================");
+
+    #if (DEBUG_PACKET)
+    printf("+++++ PACKET for %d +++++\n", pArrIdxCurr);
     for (int i = 0 ; i < sizeof(wrapped); i++) {
-      Serial.printf("%02x", ((uint8_t*)&wrapped)[i]);
+      printf("%02x", ((uint8_t*)&wrapped)[i]);
     }
-    Serial.println();
-
+    printf("\n+++++++++++++++++++++++\n", pArrIdxCurr);
+    #endif
     esp_err_t addStatus = esp_now_add_peer(&slave);
-    uint8_t time = 1;
-    // esp_err_t result = esp_now_send(mac_addr, &time, 1);
-    counter++;
+    if (addStatus == ESP_OK) {
+    printf("\n=====================");
+      printf("\nADD PEER status=0x%02x", ESP_OK); 
+    printf("\n=====================");
+    }
+    else {
+    printf("\n=====================");
+    printf("\nADD PEER status=0x%02x", addStatus-ESP_ERR_ESPNOW_BASE); 
+    printf("\n=====================");
+    }
 
+    uint8_t time = 1;
+    esp_err_t result = esp_now_send(mac_addr, &time, 1);
+    counter++; 
     msAfterESPNowRecv = millis();
   });
 
@@ -194,36 +207,31 @@ void setup() {
 
 uint32_t lastSentOkMillis = millis();
 unsigned int ct = 1; 
-void sendPacket(const char *text, int buflen) ;
+static char msgId[5]; 
 
+void sendPacket(const char *text, int buflen) ; 
 void generatePacket() {
-    static char buffer[600];
-    bzero(buffer, sizeof(buffer));
     static char b[300];
-    static char msgId[5];
-    Serial.printf("pArrIdx=%d, ct=%d\r\n", pArrIdx, ct);
     int analogValue = analogRead(ANALOG_PIN_0);
     float batt = map(analogValue, 0, 1024, 0, 134); // max=1.34v
     float batt_percent = map(batt, 0, 116, 0, 100); // devided to 1.16v
-    sprintf(b, "{\"a0\":%d,\"batt\":%s,\"batt_p\":%s,\"ct\":%lu,\"sleep\":%lu,\"payload\":\"%s\"}", analogValue, 
-          String(batt/100).c_str(), String(batt_percent).c_str(), ct++, currentSleepTimeMinuteByte, espnowMsg);
-    Serial.println(b);
+    // Serial.printf("pArrIdx=%d, ct=%d\r\n", pArrIdx, ct);
+    // sprintf(b, "{\"a0\":%d,\"batt\":%s,\"batt_p\":%s,\"ct\":%lu,\"sleep\":%lu,\"payload\":\"%s\"}", analogValue, 
+    //       String(batt/100).c_str(), String(batt_percent).c_str(), ct++, currentSleepTimeMinuteByte, espnowMsg);
+    // Serial.println(b);
 
     IPAddress ip = IPAddress(103,20,205,85);
     uint8_t _buffer[BUF_MAX_SIZE];
     char myb[BUF_MAX_SIZE];
     bzero(_buffer, sizeof(_buffer));
-    uint16_t buflen = send(_buffer, ip, 5683, "NBIoT/9ee9d8a0-c657-11e8-8443-17f06f0c0a93", COAP_CON, COAP_POST, NULL, 0, (uint8_t*) b, strlen(b)); 
-    // for (int x = 0; x < buflen; x++) {
-    //   Serial.printf("%02x", _buffer[x]); 
-    // } 
-    // Serial.println(); 
+    uint16_t buflen = generate(_buffer, ip, 5683, "NBIoT/" AIS_TOKEN, COAP_CON, COAP_POST, NULL, 0, (uint8_t*) b, strlen(b)); 
     
     if (pArrIdx > 0) {
       for (int i = pArrIdx - 1; i >= 0; i--) {
         digitalWrite(RED_LED, !digitalRead(RED_LED));
-        Serial.printf("reading idx = %d\r\n", i);
-        toHexString((uint8_t*)  &pArr[i], sizeof(CMMC_PACKET_T), (char*)espnowMsg);
+        Serial.printf("processing idx=%d\r\n", i);
+        pArrIdx--;
+        // toHexString((uint8_t*)  &pArr[i], sizeof(CMMC_PACKET_T), (char*)espnowMsg);
         // Serial.println(b);
         // str2Hex(b, buffer);
         // sprintf(msgId, "%04lu", ct);
@@ -270,15 +278,15 @@ void loop() {
   }
 
 
-  float MINUTE = 0.1;
-  int ms = MINUTE *  60 * 1000;
+  float MINUTE = 1;
+  uint32_t ms = MINUTE *  60 * 1000;
   if ( isNbConnected &&  (millis() - lastSentOkMillis > ms) )  {
-    Serial.printf("KEEP ALIVE.. %d>%d\r\n", (millis() - lastSentOkMillis), ms);
+    Serial.printf("KEEP ALIVE.. %d, ct=%d\n", ms, ct);
     generatePacket();
     lastSentOkMillis = millis();
   }
 
-  if ( (millis() - msAfterESPNowRecv) > 500 && (pArrIdx > 0) && (isNbConnected)) {
+  if ( (millis() - msAfterESPNowRecv) > 1000 && (pArrIdx > 0) && (isNbConnected)) {
     generatePacket();
     digitalWrite(RED_LED, LOW);
     prev = millis();

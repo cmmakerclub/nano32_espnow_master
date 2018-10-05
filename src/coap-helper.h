@@ -1,6 +1,6 @@
 #include "coap.h"
 #include <Arduino.h>
-int16_t generate(uint8_t *buffer, CoapPacket &packet, IPAddress ip, int port) {
+int16_t construct(uint8_t *buffer, CoapPacket &packet, IPAddress ip, int port) {
     uint8_t *p = buffer;
     uint16_t running_delta = 0;
     uint16_t packetSize = 0;
@@ -65,18 +65,11 @@ int16_t generate(uint8_t *buffer, CoapPacket &packet, IPAddress ip, int port) {
         *p++ = 0xFF;
         memcpy(p, packet.payload, packet.payloadlen);
         packetSize += 1 + packet.payloadlen;
-    }
-
-    Serial.println("dump");
-     for (int i = 0 ; i < sizeof(buffer); i++) {
-      Serial.printf("%02x", buffer[i]);
-    }
-    Serial.println();
-    Serial.println("DONE");
+    } 
     return packetSize;
 }
 
-uint16_t send(uint8_t *buffer, IPAddress ip, int port, char *url, COAP_TYPE type, COAP_METHOD method, uint8_t *token, uint8_t tokenlen, uint8_t *payload, uint32_t payloadlen) {
+uint16_t generate(uint8_t *buffer, IPAddress ip, int port, char *url, COAP_TYPE type, COAP_METHOD method, uint8_t *token, uint8_t tokenlen, uint8_t *payload, uint32_t payloadlen) {
     // make packet
     CoapPacket packet;
 
@@ -118,7 +111,7 @@ uint16_t send(uint8_t *buffer, IPAddress ip, int port, char *url, COAP_TYPE type
     // send packet
 
 
-    uint16_t s = generate(buffer, packet, ip, port); 
+    uint16_t s = construct(buffer, packet, ip, port); 
     // Serial.printf("packet len=%d\r\n", s);
     // for (int i = 0 ; i < s; i++) {
     //   Serial.printf("%02x", buffer[i]);
