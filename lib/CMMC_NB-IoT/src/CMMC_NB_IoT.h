@@ -92,16 +92,13 @@ class CMMC_NB_IoT
         bool send(uint8_t socketId, const char* host, uint16_t port, uint8_t *payload, uint16_t len) {
           char buffer[45];
           sprintf(buffer, "AT+NSOST=%d,%s,%u,%d,", socketId, host, port , len);
-          Serial.print(buffer);
           this->_modemSerial->write((char*)buffer, strlen(buffer)); 
           char t[3];
           while (len--) {
             uint8_t b = *(payload++);
             sprintf(t, "%02x", b);
             this->_modemSerial->write(t, 2);
-            Serial.print(t);
           } 
-          Serial.println();
           this->_modemSerial->write('\r');
           String nbSerialBuffer = "@";
           int ct = 0; 

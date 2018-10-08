@@ -15,7 +15,8 @@
 HardwareSerial mySerial1(2);
 CMMC_PACKET_T pArr[60];
 int pArrIdx = 0;
-char espnowMsg[300];
+
+void sendPacket(const char *text, int buflen); 
 
 #define rxPin (16)
 #define txPin (17)
@@ -35,7 +36,7 @@ uint32_t counter = 0;
 uint32_t sentCnt = 0;
 
 void str2Hex(const char* text, char* buffer);
-void toHexString(const uint8_t array[], size_t len, char buffer[]);
+void byteToHexString(const uint8_t array[], size_t len, char buffer[]);
 
 uint8_t currentSleepTimeMinuteByte = 5; 
 uint32_t msAfterESPNowRecv = millis();
@@ -54,6 +55,7 @@ void setup() {
   bzero(&slave, sizeof(slave));
   Serial.begin(115200);
   mySerial1.begin(9600);
+
 
   analogReadResolution(10); // 10Bit resolution
   analogSetAttenuation(ADC_2_5db);  // 0=0db (0..1V) 1= 2,5dB; 2=-6dB (0..2V); 3=-11dB
@@ -174,7 +176,7 @@ void setup() {
 
     esp_now_send(mac_addr, &currentSleepTimeMinuteByte, 1);
     printf("sending back sleepTime=%lu", currentSleepTimeMinuteByte);
-    printf("\n=====================");
+    printf("\n=====================\n");
 
     #if (DEBUG_PACKET)
     printf("+++++ PACKET for %d +++++\n", pArrIdxCurr);
@@ -187,18 +189,19 @@ void setup() {
     if (addStatus == ESP_OK) {
     printf("\n=====================");
       printf("\nADD PEER status=0x%02x", ESP_OK); 
-    printf("\n=====================");
+    printf("\n=====================\n");
     }
     else {
     printf("\n=====================");
     printf("\nADD PEER status=0x%02x", addStatus-ESP_ERR_ESPNOW_BASE); 
-    printf("\n=====================");
+    printf("\n=====================\n");
     }
 
     uint8_t time = 1;
     esp_err_t result = esp_now_send(mac_addr, &time, 1);
     counter++; 
     msAfterESPNowRecv = millis();
+    dirty = true;
   });
 
   prev = millis();
@@ -208,43 +211,42 @@ void setup() {
 uint32_t lastSentOkMillis = millis();
 unsigned int ct = 1; 
 static char msgId[5]; 
+IPAddress ip = IPAddress(103,20,205,85); 
 
-void sendPacket(const char *text, int buflen) ; 
+uint8_t _buffer[1024];
+
 void generatePacket() {
-    static char b[300];
+    static char jsonBuffer[1024];
+    bzero(_buffer, sizeof(_buffer)); 
     int analogValue = analogRead(ANALOG_PIN_0);
     float batt = map(analogValue, 0, 1024, 0, 134); // max=1.34v
     float batt_percent = map(batt, 0, 116, 0, 100); // devided to 1.16v
-    // Serial.printf("pArrIdx=%d, ct=%d\r\n", pArrIdx, ct);
-    // sprintf(b, "{\"a0\":%d,\"batt\":%s,\"batt_p\":%s,\"ct\":%lu,\"sleep\":%lu,\"payload\":\"%s\"}", analogValue, 
-    //       String(batt/100).c_str(), String(batt_percent).c_str(), ct++, currentSleepTimeMinuteByte, espnowMsg);
-    // Serial.println(b);
-
-    IPAddress ip = IPAddress(103,20,205,85);
-    uint8_t _buffer[BUF_MAX_SIZE];
-    char myb[BUF_MAX_SIZE];
-    bzero(_buffer, sizeof(_buffer));
-    uint16_t buflen = generate(_buffer, ip, 5683, "NBIoT/" AIS_TOKEN, COAP_CON, COAP_POST, NULL, 0, (uint8_t*) b, strlen(b)); 
     
     if (pArrIdx > 0) {
+      printf(">> CASE; got sensor node data\n");
       for (int i = pArrIdx - 1; i >= 0; i--) {
+        char espnowHexBuffer[sizeof(CMMC_PACKET_T)*2+1]; 
+        printf("espnow serial buffer = %d\n", sizeof (espnowHexBuffer));
         digitalWrite(RED_LED, !digitalRead(RED_LED));
-        Serial.printf("processing idx=%d\r\n", i);
+        Serial.printf("processing idx=%d, ct=%d\n", i, ct);
         pArrIdx--;
-        // toHexString((uint8_t*)  &pArr[i], sizeof(CMMC_PACKET_T), (char*)espnowMsg);
-        // Serial.println(b);
-        // str2Hex(b, buffer);
-        // sprintf(msgId, "%04lu", ct);
-        // Serial.printf("msgId = %s\r\n", msgId);
-        // String p3 = "";
-        // sendPacket(p3.c_str());
+        byteToHexString((uint8_t*)  &pArr[i], sizeof(CMMC_PACKET_T), (char*)espnowHexBuffer);
+        bzero(jsonBuffer, 1024);
+        sprintf(jsonBuffer, "{\"a0\":%d,\"uptime_s\":%lu,\"heap\":%lu,\"batt\":%s,\"batt_p\":%s,\"ct\":%lu,\"sleep\":%lu,\"payload\":\"%s\"}", 
+        analogValue, millis()/1000, ESP.getFreeHeap(), String(batt/100).c_str(), String(batt_percent).c_str(), ct++, currentSleepTimeMinuteByte, espnowHexBuffer); 
+
+       uint16_t buflen = generate(_buffer, ip, 5683, "NBIoT/" AIS_TOKEN, COAP_CON, COAP_POST, NULL, 0, (uint8_t*) jsonBuffer, strlen(jsonBuffer)); 
+       sendPacket((uint8_t*)_buffer, buflen);
       } 
     }
     else {
-      memcpy(myb, _buffer, buflen);
-      sendPacket(myb, buflen);
+      printf(">> CASE; keep alive..\n");
+      sprintf(jsonBuffer, "{\"a0\":%d,\"uptime_s\":%lu,\"heap\":%lu,\"batt\":%s,\"batt_p\":%s,\"ct\":%lu,\"sleep\":%lu,\"payload\":\"%s\"}", 
+      analogValue, millis()/1000, ESP.getFreeHeap(), String(batt/100).c_str(), String(batt_percent).c_str(), ct++, currentSleepTimeMinuteByte, "X"); 
+      uint16_t buflen = generate(_buffer, ip, 5683, "NBIoT/" AIS_TOKEN, COAP_CON, COAP_POST, NULL, 0, (uint8_t*) jsonBuffer, strlen(jsonBuffer)); 
+      sendPacket((uint8_t*)_buffer, buflen);
     }
-}
+};
 
 void sendPacket(const char *text, int buflen) {
     int rt = 0;
@@ -286,10 +288,11 @@ void loop() {
     lastSentOkMillis = millis();
   }
 
-  if ( (millis() - msAfterESPNowRecv) > 1000 && (pArrIdx > 0) && (isNbConnected)) {
+  if ( dirty && (millis() - msAfterESPNowRecv) > 500 && (pArrIdx > 0) && (isNbConnected)) {
     generatePacket();
     digitalWrite(RED_LED, LOW);
     prev = millis();
+    dirty = false;
   }
 
 } 
@@ -301,7 +304,7 @@ void str2Hex(const char* text, char* buffer) {
   }
 }
 
-void toHexString(const uint8_t array[], size_t len, char buffer[]) {
+void byteToHexString(const uint8_t array[], size_t len, char buffer[]) {
   for (unsigned int i = 0; i < len; i++)
   {
     byte nib1 = (array[i] >> 4) & 0x0F;

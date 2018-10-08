@@ -30,7 +30,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define COAP_OPTION_HEADER_SIZE 1
 #define COAP_PAYLOAD_MARKER 0xFF
 #define MAX_OPTION_NUM 10
-#define BUF_MAX_SIZE 250
+#define BUF_MAX_SIZE 600
 #define COAP_DEFAULT_PORT 5683
 
 #define RESPONSE_CODE(class, detail) ((class << 5) | (detail))
@@ -115,7 +115,7 @@ class CoapPacket {
     uint8_t *token;
     uint8_t tokenlen;
     uint8_t *payload;
-    uint8_t payloadlen;
+    uint16_t payloadlen;
     uint16_t messageid;
     
     uint8_t optionnum;
