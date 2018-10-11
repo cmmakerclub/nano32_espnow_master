@@ -59,6 +59,10 @@ void setup() {
 
   analogReadResolution(10); // 10Bit resolution
   analogSetAttenuation(ADC_2_5db);  // 0=0db (0..1V) 1= 2,5dB; 2=-6dB (0..2V); 3=-11dB
+    // ADC_ATTEN_DB_0   = 0,  /*!<The input voltage of ADC will be reduced to about 1/1 */
+    // ADC_ATTEN_DB_2_5 = 1,  /*!<The input voltage of ADC will be reduced to about 1/1.34 */
+    // ADC_ATTEN_DB_6   = 2,  /*!<The input voltage of ADC will be reduced to about 1/2 */
+    // ADC_ATTEN_DB_11  = 3,  /*!<The input voltage of ADC will be reduced to about 1/3.6*/
 
   printf("RESETTING NB-IoT Shield...");
   pinMode(RESET_PIN, OUTPUT); 
