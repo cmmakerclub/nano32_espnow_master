@@ -141,7 +141,7 @@ Stream* CMMC_NB_IoT::getModemSerial() {
   return this->_modemSerial;
 }
 
-bool CMMC_NB_IoT::sendMessageHex(const char *msg, uint16_t len, uint8_t socketId) {
+bool CMMC_NB_IoT::sendMessageHex(uint8_t *msg, uint16_t len, uint8_t socketId) {
   return this->_socketsMap.valueAt(socketId)->sendMessageHex(msg, len);
 }
 
@@ -153,8 +153,8 @@ int CMMC_NB_IoT::createUdpSocket(String hostname, uint16_t port, UDPConfig c) {
   randomSeed(analogRead(0));
   sprintf(buffer, "AT+NSOCR=DGRAM,17,%u,0", random(6000, 50000));
   Serial.printf("notification config = %s\n", buffer);
-  callCommand("AT+NSOCL=2");
-  callCommand("AT+NSOCL=1");
+  // callCommand("AT+NSOCL=2");
+  // callCommand("AT+NSOCL=1");
   if (callCommand(buffer, 10, 5, resBuffer)) {
     if (!this->_socketsMap.contains(hashKey)) {
       debugPrint("socket id=");

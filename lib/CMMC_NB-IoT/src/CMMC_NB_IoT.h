@@ -55,7 +55,8 @@ class CMMC_NB_IoT
     bool setPhoneFunctionality(unsigned int fun);
     void queryDeviceInfo();
     void rebootModule();
-    bool sendMessageHex(const char *msg, uint16_t len, uint8_t socketId);
+    bool sendMessageHex(uint8_t *msg, uint16_t len, uint8_t socketId);
+    // bool sendMessage(uint8_t *msg, uint16_t len, uint8_t socketId);
     void hello();
     void loop();
 
@@ -85,8 +86,12 @@ class CMMC_NB_IoT
           this->_modemSerial = modem->getModemSerial();
         };
 
-        bool sendMessageHex(const char *payload, uint16_t len) { 
-          return send(this->_socketId, _host.c_str(), _port, (uint8_t*)payload, len);
+        bool sendMessageHex(uint8_t *payload, uint16_t len) {
+          return send(this->_socketId, _host.c_str(), _port, payload, len);
+        }
+
+        bool sendMessage(uint8_t *payload, uint16_t len) {
+          return send(this->_socketId, _host.c_str(), _port, payload, len);
         }
 
         bool send(uint8_t socketId, const char* host, uint16_t port, uint8_t *payload, uint16_t len) {
@@ -94,11 +99,16 @@ class CMMC_NB_IoT
           sprintf(buffer, "AT+NSOST=%d,%s,%u,%d,", socketId, host, port , len);
           this->_modemSerial->write((char*)buffer, strlen(buffer)); 
           char t[3];
+          Serial.print(buffer);
+          Serial.printf(" len=%d\r\n", len);
           while (len--) {
             uint8_t b = *(payload++);
             sprintf(t, "%02x", b);
+            Serial.print(t);
             this->_modemSerial->write(t, 2);
+            delayMicroseconds(1);
           } 
+          Serial.println();
           this->_modemSerial->write('\r');
           String nbSerialBuffer = "@";
           int ct = 0; 
@@ -112,19 +122,18 @@ class CMMC_NB_IoT
               }
             }
             else {
+              Serial.println("WAIT response...");
               ct++;
               if (ct > 50) {
                 return false;
               }
-              delay(100);
+              delay(10);
             }
             delay(0);
           } 
         }
 
-        bool sendMessage(uint8_t *payload, uint16_t len) {
-          return send(this->_socketId, _host.c_str(), _port, payload, len);
-        }
+
 
         ~Udp() { };
       private:
