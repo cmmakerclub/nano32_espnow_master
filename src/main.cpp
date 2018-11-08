@@ -6,15 +6,25 @@
 #include "coap.h"
 #include "coap-helper.h"
 
+#define uS_TO_S_FACTOR 1000000  /* Conversion factor for micro seconds to seconds */
+#define SLEEP_TIME_SECONDS  3        /* Time ESP32 will go to sleep (in seconds) */
+
+
 // #include "soc/soc.h"
 // #include "soc/rtc_cntl_reg.h"
 // #define AIS_TOKEN "9ee9d8a0-c657-11e8-8443-17f06f0c0a93"
+<<<<<<< HEAD
 #define AIS_TOKEN "xffbfb30-aaae-11e8-8e2c-19a3b7904cb9" // MITTY-V1
+=======
+// #define AIS_TOKEN "3ffbfb30-aaae-11e8-8e2c-19a3b7904cb9" // MITTY-V1
+#define AIS_TOKEN "fc640ca0-d2bc-11e8-8443-17f06f0c0a93" // Traffic Camera
+>>>>>>> update.
 #define DEBUG_PACKET 0
 
 HardwareSerial mySerial1(2);
 CMMC_PACKET_T pArr[60];
 int pArrIdx = 0;
+RTC_DATA_ATTR int rebootCount = 0;
 
 void sendPacket(uint8_t *text, int buflen);
 
@@ -291,7 +301,10 @@ void loop() {
   nb.loop();
 
   if ( (millis() - lastSentOkMillis) > 10800 * 1000) {
-    ESP.deepSleep(1e6);
+    rebootCount += 1;
+    esp_sleep_enable_timer_wakeup(SLEEP_TIME_SECONDS * uS_TO_S_FACTOR);
+    esp_deep_sleep_start();
+    // ESP.deepSleep(1e6);
   }
 
   float MINUTE = 1;
