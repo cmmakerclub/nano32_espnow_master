@@ -299,7 +299,7 @@ void sendPacket(uint8_t *text, int buflen) {
     // Serial.println(buffer);
     while (true) {
       ledcWrite(1, 50);
-      // Serial.println(text);
+        updateStatus(".....");
       if (nb.sendMessageHex(buffer, buflen, 0)) {
         ledcWrite(1, 0);
         updateStatus(">> [ais] socket0: send ok.");
