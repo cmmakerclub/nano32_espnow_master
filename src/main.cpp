@@ -5,6 +5,18 @@
 #include "data_type.h"
 #include "coap.h"
 #include "coap-helper.h"
+#include <U8g2lib.h>
+
+
+#ifdef U8X8_HAVE_HW_SPI
+#include <SPI.h>
+#endif
+#ifdef U8X8_HAVE_HW_I2C
+#include <Wire.h>
+#endif
+
+U8G2_ST7920_128X64_F_SW_SPI u8g2(U8G2_R0, /* clock=*/ 18, /* MOSI=*/ 23, /* MISO=*/ 19);
+
 
 #define uS_TO_S_FACTOR 1000000  /* Conversion factor for micro seconds to seconds */
 #define SLEEP_TIME_SECONDS  3        /* Time ESP32 will go to sleep (in seconds) */
@@ -13,12 +25,8 @@
 // #include "soc/soc.h"
 // #include "soc/rtc_cntl_reg.h"
 // #define AIS_TOKEN "9ee9d8a0-c657-11e8-8443-17f06f0c0a93"
-<<<<<<< HEAD
-#define AIS_TOKEN "xffbfb30-aaae-11e8-8e2c-19a3b7904cb9" // MITTY-V1
-=======
-// #define AIS_TOKEN "3ffbfb30-aaae-11e8-8e2c-19a3b7904cb9" // MITTY-V1
-#define AIS_TOKEN "fc640ca0-d2bc-11e8-8443-17f06f0c0a93" // Traffic Camera
->>>>>>> update.
+#define AIS_TOKEN "3ffbfb30-aaae-11e8-8e2c-19a3b7904cb9" // MITTY-V1
+// #define AIS_TOKEN "fc640ca0-d2bc-11e8-8443-17f06f0c0a93" // Traffic Camera
 #define DEBUG_PACKET 0
 
 HardwareSerial mySerial1(2);
@@ -60,12 +68,28 @@ esp_now_peer_info_t slave;
 
 CoapPacket p;
 
+void updateStatus(String text) {
+  printf("%s\n", text.c_str());
+  u8g2.clearBuffer();          // clear the internal memory
+  u8g2.setFont(u8g2_font_5x7_tf); // choose a suitable font
+  u8g2.drawStr(0, 10, text.c_str());
+  u8g2.sendBuffer();          // transfer internal memory to the display
+}
+
 void setup() {
   // WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector
   bzero(&slave, sizeof(slave));
   Serial.begin(115200);
   mySerial1.begin(9600);
+  u8g2.begin();
+  updateStatus("Booting....");
 
+  // u8g2.drawStr(0, 20, "Loading...");
+  // u8g2.setCursor(60, 20);
+  // u8g2.print(latitude, 6);
+  // u8g2.drawStr(0, 30, "Longitude : ");
+  // u8g2.setCursor(70, 30);
+  // u8g2.print(longitude, 6);
 
   analogReadResolution(10); // 10Bit resolution
   analogSetAttenuation(ADC_11db);  // 0=0db (0..1V) 1= 2,5dB; 2=-6dB (0..2V); 3=-11dB
@@ -74,16 +98,15 @@ void setup() {
     // ADC_ATTEN_DB_6   = 2,  /*!<The input voltage of ADC will be reduced to about 1/2 */
     // ADC_ATTEN_DB_11  = 3,  /*!<The input voltage of ADC will be reduced to about 1/3.6*/
 
-  printf("RESETTING NB-IoT Shield...");
+  updateStatus("Welcome to NB-IoT Bridge...");
   pinMode(RESET_PIN, OUTPUT);
   digitalWrite(RESET_PIN, HIGH);
   delay(100);
   digitalWrite(RESET_PIN, LOW);
   delay(1000);
   ledcAttachPin(BOARD_LED, 1);
-  printf("\ndone.");
 
-  printf("Configuring LED\n");
+  updateStatus("Configuring LED..");
   ledcSetup(1, 12000, 8);
   ledcWrite(1, 20);
   pinMode(GREEN_LED, OUTPUT);
@@ -91,9 +114,8 @@ void setup() {
 
   digitalWrite(GREEN_LED, HIGH);
   digitalWrite(RED_LED, HIGH);
-  printf("Disconnecting WiFi...\n");
   WiFi.disconnect();
-  printf("SET WiFi Mode=WIFI_AP_STA\n");
+  updateStatus("SET WiFi Mode=WIFI_AP_STA\n");
   WiFi.mode(WIFI_AP_STA);
   delay(200);
   Serial.printf("STA MAC: %s\r\n", WiFi.macAddress().c_str());
@@ -101,10 +123,10 @@ void setup() {
   delay(1000);
 
   if (esp_now_init() == ESP_OK) {
-    printf("ESPNow Init Success\n");
+    updateStatus("ESPNow Init Success\n");
   }
   else {
-    printf("ESPNow Init Failed\n");
+    updateStatus("ESPNow Init Failed\n");
     ESP.restart();
   }
 
@@ -112,7 +134,7 @@ void setup() {
   nb.setDebugStream(&Serial);
   nb.onDeviceReboot([]() {
     ledcWrite(1, 0);
-    Serial.println(F("[user] Device rebooted."));
+    updateStatus(F("[user] Device rebooted."));
     digitalWrite(GREEN_LED, LOW);
     digitalWrite(RED_LED, LOW);
     delay(2000);
@@ -134,14 +156,14 @@ void setup() {
   nb.onMessageArrived([](char *text, size_t len, uint8_t socketId, char* ip, uint16_t port) {
     char buffer[100];
     sprintf(buffer, "++ [recv:] socketId=%u, ip=%s, port=%u, len=%d bytes (%lums)", socketId, ip, port, len, millis());
-    Serial.println(buffer);
+    updateStatus(buffer);
   });
 
   nb.onConnecting([]() {
     ledcWrite(1, 0);
     delay(300);
     ledcWrite(1, 20);
-    Serial.println("Connecting to NB-IoT...");
+    updateStatus("Connecting to NB-IoT...");
     digitalWrite(GREEN_LED, !digitalRead(GREEN_LED));
     delay(300);
   });
@@ -150,6 +172,7 @@ void setup() {
     ledcWrite(1, 0);
     digitalWrite(RED_LED, HIGH);
     digitalWrite(GREEN_LED, HIGH);
+    updateStatus("NB-IoT Connected.");
     Serial.print("[user] NB-IoT Network connected at (");
     Serial.print(millis());
     Serial.println("ms)");
@@ -158,9 +181,9 @@ void setup() {
     delay(1000);
   });
 
-  Serial.println("WAIT... 2s");
+  updateStatus("WAIT... 2s");
   delay(2000);
-  Serial.println("Rebooting module");
+  updateStatus("Rebooting module");
 
   nb.hello();
   nb.rebootModule();
@@ -279,13 +302,13 @@ void sendPacket(uint8_t *text, int buflen) {
       // Serial.println(text);
       if (nb.sendMessageHex(buffer, buflen, 0)) {
         ledcWrite(1, 0);
-        Serial.println(">> [ais] socket0: send ok.");
+        updateStatus(">> [ais] socket0: send ok.");
         lastSentOkMillis = millis();
         delay(100);
         break;
       }
       else {
-        Serial.println(">> [ais] socket0: send failed.");
+        updateStatus(">> [ais] socket0: send failed.");
         if (++rt > 5) {
           delay(100);
           ESP.deepSleep(1e6);
