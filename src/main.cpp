@@ -9,7 +9,7 @@
 // #include "soc/soc.h"
 // #include "soc/rtc_cntl_reg.h" 
 // #define AIS_TOKEN "9ee9d8a0-c657-11e8-8443-17f06f0c0a93" 
-#define AIS_TOKEN "3ffbfb30-aaae-11e8-8e2c-19a3b7904cb9" // MITTY-V1
+#define AIS_TOKEN "xffbfb30-aaae-11e8-8e2c-19a3b7904cb9" // MITTY-V1
 #define DEBUG_PACKET 0 
 
 HardwareSerial mySerial1(2);
