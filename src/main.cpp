@@ -6,6 +6,8 @@
 #include "coap.h"
 #include "coap-helper.h"
 #include <U8g2lib.h>
+#include "utils.h"
+#include <CMMC_Interval.h>
 
 
 #ifdef U8X8_HAVE_HW_SPI
@@ -15,12 +17,12 @@
 #include <Wire.h>
 #endif
 
-U8G2_ST7920_128X64_F_SW_SPI u8g2(U8G2_R0, /* clock=*/ 18, /* MOSI=*/ 23, /* MISO=*/ 19);
+U8G2_ST7920_128X64_F_SW_SPI *u8g2;
+CMMC_Interval interval;
 
 
 #define uS_TO_S_FACTOR 1000000  /* Conversion factor for micro seconds to seconds */
 #define SLEEP_TIME_SECONDS  3        /* Time ESP32 will go to sleep (in seconds) */
-
 
 // #include "soc/soc.h"
 // #include "soc/rtc_cntl_reg.h"
@@ -70,10 +72,10 @@ CoapPacket p;
 
 void updateStatus(String text) {
   printf("%s\n", text.c_str());
-  u8g2.clearBuffer();          // clear the internal memory
-  u8g2.setFont(u8g2_font_5x7_tf); // choose a suitable font
-  u8g2.drawStr(0, 10, text.c_str());
-  u8g2.sendBuffer();          // transfer internal memory to the display
+  u8g2->clearBuffer();          // clear the internal memory
+  u8g2->setFont(u8g2_font_5x7_tf); // choose a suitable font
+  u8g2->drawStr(0, 10, text.c_str());
+  u8g2->sendBuffer();          // transfer internal memory to the display
 }
 
 void setup() {
@@ -81,15 +83,28 @@ void setup() {
   bzero(&slave, sizeof(slave));
   Serial.begin(115200);
   mySerial1.begin(9600);
-  u8g2.begin();
-  updateStatus("Booting....");
+  u8g2 = new U8G2_ST7920_128X64_F_SW_SPI(U8G2_R0, /* clock=*/ 18, /* MOSI=*/ 23, /* MISO=*/ 19);
+  u8g2->begin();
 
-  // u8g2.drawStr(0, 20, "Loading...");
-  // u8g2.setCursor(60, 20);
-  // u8g2.print(latitude, 6);
-  // u8g2.drawStr(0, 30, "Longitude : ");
-  // u8g2.setCursor(70, 30);
-  // u8g2.print(longitude, 6);
+  u8g2->firstPage();
+  do
+  {
+    // u8g2->drawXBM(-10, 0, 128, 64, logo);
+    u8g2->setFont(u8g2_font_logisoso16_tr);
+    u8g2->setCursor(0, 28);
+    u8g2->print("NB-IoT Bridge");
+
+    u8g2->setCursor(40, 46);
+    u8g2->setFont(u8g2_font_10x20_te);
+    u8g2->print("Starting...");
+  } while (u8g2->nextPage());
+  delay(2000);
+  // u8g2->drawStr(0, 20, "Loading...");
+  // u8g2->setCursor(60, 20);
+  // u8g2->print(latitude, 6);
+  // u8g2->drawStr(0, 30, "Longitude : ");
+  // u8g2->setCursor(70, 30);
+  // u8g2->print(longitude, 6);
 
   analogReadResolution(10); // 10Bit resolution
   analogSetAttenuation(ADC_11db);  // 0=0db (0..1V) 1= 2,5dB; 2=-6dB (0..2V); 3=-11dB
@@ -163,7 +178,7 @@ void setup() {
     ledcWrite(1, 0);
     delay(300);
     ledcWrite(1, 20);
-    updateStatus("Connecting to NB-IoT...");
+    updateStatus("Attaching to NB-IoT...");
     digitalWrite(GREEN_LED, !digitalRead(GREEN_LED));
     delay(300);
   });
@@ -186,7 +201,7 @@ void setup() {
   updateStatus("Rebooting module");
 
   nb.hello();
-  nb.rebootModule();
+  // nb.rebootModule();
 
   esp_now_register_send_cb([&] (const uint8_t *mac_addr, esp_now_send_status_t status) {
     sentCnt++;
@@ -299,7 +314,7 @@ void sendPacket(uint8_t *text, int buflen) {
     // Serial.println(buffer);
     while (true) {
       ledcWrite(1, 50);
-        updateStatus(".....");
+        // updateStatus(".....");
       if (nb.sendMessageHex(buffer, buflen, 0)) {
         ledcWrite(1, 0);
         updateStatus(">> [ais] socket0: send ok.");
@@ -345,22 +360,45 @@ void loop() {
     dirty = false;
   }
 
-}
+  interval.every_ms(1000, [&]() {
+   u8g2->firstPage();
+   int factor = micros()%6;
+   factor = +0;
+   do {
+     int _pageIdx = 0;
+     int marginLeft = 6;
+      if (_pageIdx == 0) {
+        int logoMargin = 40;
+        // u8g2->drawXBM(0,0,128,64, logo);
+        // u8g2->drawXBM(5, 5, 40, 32, cat);
 
-void str2Hex(const char* text, char* buffer) {
-  size_t len = strlen(text);
-  for (int i = 0 ; i < len; i++) {
-    sprintf(buffer + i * 2, "%02x", text[i]);
-  }
-}
+        u8g2->setFont(u8g2_font_siji_t_6x10);
+        u8g2->setCursor(logoMargin+10, 16);
+        u8g2->print("NB-IoT Bridge");
 
-void byteToHexString(const uint8_t array[], size_t len, char buffer[]) {
-  for (unsigned int i = 0; i < len; i++)
-  {
-    byte nib1 = (array[i] >> 4) & 0x0F;
-    byte nib2 = (array[i] >> 0) & 0x0F;
-    buffer[i * 2 + 0] = nib1  < 0xA ? '0' + nib1  : 'A' + nib1  - 0xA;
-    buffer[i * 2 + 1] = nib2  < 0xA ? '0' + nib2  : 'A' + nib2  - 0xA;
-  }
-  buffer[len * 2] = '\0';
+        u8g2->setFont(u8g2_font_siji_t_6x10);
+        u8g2->setCursor(logoMargin+12, 27);
+        u8g2->print("Weather");
+
+        u8g2->setCursor(logoMargin+12, 35);
+        u8g2->print("station");
+
+        u8g2->setFont(u8g2_font_logisoso16_tf);
+        u8g2->setCursor(6+marginLeft, 60);
+        u8g2->print(88);
+        u8g2->print("°C");
+
+        u8g2->setFont(u8g2_font_open_iconic_all_2x_t);
+        u8g2->drawGlyph(74, 60, 152);
+
+        u8g2->setFont(u8g2_font_logisoso16_tf);
+        u8g2->setCursor(85+marginLeft, 60);
+
+        u8g2->print(99);
+        u8g2->print("%");
+
+      }
+   } while (u8g2->nextPage());
+  });
+
 }
