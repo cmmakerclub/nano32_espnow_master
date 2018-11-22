@@ -67,7 +67,7 @@ void CMMC_NB_IoT::rebootModule() {
 }
 
 void CMMC_NB_IoT::hello() {
-  while (!callCommand(F("AT"), TIMEOUT_5s)); 
+  while (!callCommand(F("AT"), TIMEOUT_5s));
 }
 
 bool CMMC_NB_IoT::setPhoneFunctionality(unsigned int fun) {
@@ -133,7 +133,7 @@ void CMMC_NB_IoT::loop() {
         Serial.println(response.length());
         Serial.println("===================");
       }
-    } 
+    }
   }
 }
 
@@ -150,7 +150,7 @@ int CMMC_NB_IoT::createUdpSocket(String hostname, uint16_t port, UDPConfig c) {
   String hashKey = String(hostname + ":" + port);
   char resBuffer[40];
   char buffer[60];
-  randomSeed(analogRead(0));
+  randomSeed(esp_random());
   sprintf(buffer, "AT+NSOCR=DGRAM,17,%u,0", random(6000, 50000));
   Serial.printf("notification config = %s\n", buffer);
   // callCommand("AT+NSOCL=2");
@@ -248,4 +248,3 @@ bool CMMC_NB_IoT::_writeCommand(String at, uint32_t timeoutS, char *outStr, bool
   }
   return reqSuccess;
 }
-

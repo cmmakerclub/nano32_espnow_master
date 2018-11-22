@@ -5,7 +5,7 @@
 #define SERIAL_BUFFER_SIZE 256
 
 #include <Arduino.h>
-#include <HashMap.h> 
+#include <HashMap.h>
 #include "CMMC_Interval.hpp"
 #include "CMMC_AT_Bridge.hpp"
 
@@ -47,10 +47,10 @@ class CMMC_NB_IoT
     char* getDeviceIP();
     void activate();
     // void deactivate();
-    Stream* getModemSerial(); 
+    Stream* getModemSerial();
     int createUdpSocket(String hostname, uint16_t port, UDPConfig config = DISABLE_RECV);
-    bool _writeCommand(String at, uint32_t timeoutMs, char *s = NULL, bool silent = false); 
-    bool sendMessage(uint8_t *msg, size_t len, uint8_t socketId = 0); 
+    bool _writeCommand(String at, uint32_t timeoutMs, char *s = NULL, bool silent = false);
+    bool sendMessage(uint8_t *msg, size_t len, uint8_t socketId = 0);
     bool callCommand(String at, uint8_t timeout = 10, int retries = 5, char *outStr = NULL);
     bool setPhoneFunctionality(unsigned int fun);
     void queryDeviceInfo();
@@ -64,7 +64,7 @@ class CMMC_NB_IoT
     CMMC_Interval _loopTimer;
     bool _deviceNeverConnected;
     Stream* _diagStream;
-    bool _disableDiag; 
+    bool _disableDiag;
     DeviceInfo deviceInfo;
     deviceInfoCb_t _user_onDeviceInfo_cb;
     voidCb_t _user_onDeviceReady_cb;
@@ -74,7 +74,7 @@ class CMMC_NB_IoT
     onMessageCb_t _user_onMessage_cb;
     Stream *_modemSerial;
     HashMap<String, Udp*, HASH_SIZE> _socketsMap;
-}; 
+};
 
    class Udp {
       public:
@@ -97,21 +97,21 @@ class CMMC_NB_IoT
         bool send(uint8_t socketId, const char* host, uint16_t port, uint8_t *payload, uint16_t len) {
           char buffer[45];
           sprintf(buffer, "AT+NSOST=%d,%s,%u,%d,", socketId, host, port , len);
-          this->_modemSerial->write((char*)buffer, strlen(buffer)); 
+          this->_modemSerial->write((char*)buffer, strlen(buffer));
           char t[3];
-          Serial.print(buffer);
-          Serial.printf(" len=%d\r\n", len);
+          // Serial.print(buffer);
+          // Serial.printf(" len=%d\r\n", len);
           while (len--) {
             uint8_t b = *(payload++);
             sprintf(t, "%02x", b);
-            Serial.print(t);
+            // Serial.print(t);
             this->_modemSerial->write(t, 2);
             delayMicroseconds(1);
-          } 
+          }
           Serial.println();
           this->_modemSerial->write('\r');
           String nbSerialBuffer = "@";
-          int ct = 0; 
+          int ct = 0;
           while (1) {
             if (this->_modemSerial->available()) {
               String response = this->_modemSerial->readStringUntil('\n');
@@ -122,7 +122,7 @@ class CMMC_NB_IoT
               }
             }
             else {
-              Serial.println("WAIT response...");
+              // Serial.println("WAIT response...");
               ct++;
               if (ct > 50) {
                 return false;
@@ -130,7 +130,7 @@ class CMMC_NB_IoT
               delay(10);
             }
             delay(0);
-          } 
+          }
         }
 
 
@@ -141,7 +141,7 @@ class CMMC_NB_IoT
         Stream *_modemSerial;
         String _host;
         uint16_t _port;
-        uint8_t _socketId; 
+        uint8_t _socketId;
     };
 
 #endif //CMMC_NB_IoT_H
