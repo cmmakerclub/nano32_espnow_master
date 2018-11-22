@@ -8,6 +8,7 @@
 #include <U8g2lib.h>
 #include "utils.h"
 #include <CMMC_Interval.h>
+#include <TimeLib.h>
 
 
 #ifdef U8X8_HAVE_HW_SPI
@@ -19,6 +20,11 @@
 
 U8G2_ST7920_128X64_F_SW_SPI *u8g2;
 CMMC_Interval interval;
+CMMC_Interval keepAliveInterval;
+String status;
+int packetRecv = 0;
+int nbSentOk = 0;
+int keepAliveSent = 0;
 
 
 #define uS_TO_S_FACTOR 1000000  /* Conversion factor for micro seconds to seconds */
@@ -34,7 +40,7 @@ CMMC_Interval interval;
 HardwareSerial mySerial1(2);
 CMMC_PACKET_T pArr[60];
 int pArrIdx = 0;
-RTC_DATA_ATTR int rebootCount = 0;
+RTC_DATA_ATTR int rebootCount = -1;
 
 void sendPacket(uint8_t *text, int buflen);
 
@@ -69,20 +75,31 @@ uint32_t prev;
 esp_now_peer_info_t slave;
 
 CoapPacket p;
+void updateStatus(String text);
+void print_wakeup_reason(){
+  esp_sleep_wakeup_cause_t wakeup_reason;
 
-void updateStatus(String text) {
-  printf("%s\n", text.c_str());
-  u8g2->clearBuffer();          // clear the internal memory
-  u8g2->setFont(u8g2_font_5x7_tf); // choose a suitable font
-  u8g2->drawStr(0, 10, text.c_str());
-  u8g2->sendBuffer();          // transfer internal memory to the display
+  wakeup_reason = esp_sleep_get_wakeup_cause();
+
+  switch(wakeup_reason)
+  {
+    case ESP_SLEEP_WAKEUP_EXT0 : Serial.println("Wakeup caused by external signal using RTC_IO"); break;
+    case ESP_SLEEP_WAKEUP_EXT1 : Serial.println("Wakeup caused by external signal using RTC_CNTL"); break;
+    case ESP_SLEEP_WAKEUP_TIMER : Serial.println("Wakeup caused by timer"); break;
+    case ESP_SLEEP_WAKEUP_TOUCHPAD : Serial.println("Wakeup caused by touchpad"); break;
+    case ESP_SLEEP_WAKEUP_ULP : Serial.println("Wakeup caused by ULP program"); break;
+    default : Serial.printf("Wakeup was not caused by deep sleep: %d\n",wakeup_reason); break;
+  }
 }
 
 void setup() {
+  // setTime(millis());
   // WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector
+  rebootCount++;
   bzero(&slave, sizeof(slave));
   Serial.begin(115200);
   mySerial1.begin(9600);
+  print_wakeup_reason();
   u8g2 = new U8G2_ST7920_128X64_F_SW_SPI(U8G2_R0, /* clock=*/ 18, /* MOSI=*/ 23, /* MISO=*/ 19);
   u8g2->begin();
 
@@ -91,14 +108,14 @@ void setup() {
   {
     // u8g2->drawXBM(-10, 0, 128, 64, logo);
     u8g2->setFont(u8g2_font_logisoso16_tr);
-    u8g2->setCursor(0, 28);
+    u8g2->setCursor(2, 28);
     u8g2->print("NB-IoT Bridge");
 
-    u8g2->setCursor(40, 46);
-    u8g2->setFont(u8g2_font_10x20_te);
-    u8g2->print("Starting...");
+    // u8g2->setCursor(40, 46);
+    // u8g2->setFont(u8g2_font_10x20_te);
+    // u8g2->print("Starting...");
   } while (u8g2->nextPage());
-  delay(2000);
+  delay(1000);
   // u8g2->drawStr(0, 20, "Loading...");
   // u8g2->setCursor(60, 20);
   // u8g2->print(latitude, 6);
@@ -152,7 +169,6 @@ void setup() {
     updateStatus(F("[user] Device rebooted."));
     digitalWrite(GREEN_LED, LOW);
     digitalWrite(RED_LED, LOW);
-    delay(2000);
   });
 
   nb.onDeviceReady([]() {
@@ -196,18 +212,17 @@ void setup() {
     delay(1000);
   });
 
-  updateStatus("WAIT... 2s");
-  delay(2000);
   updateStatus("Rebooting module");
 
   nb.hello();
-  // nb.rebootModule();
+  nb.rebootModule();
 
   esp_now_register_send_cb([&] (const uint8_t *mac_addr, esp_now_send_status_t status) {
     sentCnt++;
   });
 
   esp_now_register_recv_cb([&](const uint8_t *mac_addr, const uint8_t *data, int data_len) {
+    packetRecv++;
     int pArrIdxCurr = pArrIdx;
     pArrIdx = (pArrIdx + 1) % 30;
     printf("=====================\n");
@@ -267,7 +282,7 @@ IPAddress ip = IPAddress(103,20,205,85);
 
 uint8_t _buffer[1300];
 
-void generatePacket() {
+void generatePacketToQueue() {
     static char jsonBuffer[1024];
     bzero(_buffer, sizeof(_buffer));
     int analogValue = analogRead(ANALOG_PIN_0);
@@ -314,11 +329,12 @@ void sendPacket(uint8_t *text, int buflen) {
     // Serial.println(buffer);
     while (true) {
       ledcWrite(1, 50);
-        // updateStatus(".....");
+        updateStatus("dispatching queue...");
       if (nb.sendMessageHex(buffer, buflen, 0)) {
         ledcWrite(1, 0);
         updateStatus(">> [ais] socket0: send ok.");
         lastSentOkMillis = millis();
+        nbSentOk++;
         delay(100);
         break;
       }
@@ -335,70 +351,123 @@ void sendPacket(uint8_t *text, int buflen) {
     }
 }
 
+const char* formatedNumber(char* buffer, int n) {
+  sprintf(buffer, "%3d", n);
+  return buffer;
+}
+
+void paintScreen() {
+   u8g2->firstPage();
+   int factor = micros()%6;
+   factor = +0;
+   static int count = 0;
+   count++;
+   do {
+     int _pageIdx = 0;
+     int marginLeft = 6;
+      if (_pageIdx == 0) {
+        int logoMargin = 40;
+        int lineSpacing = 2;
+        char numBuffer[20];
+        // u8g2->drawXBM(0,0,128,64, logo);
+        // u8g2->drawXBM(5, 5, 40, 32, cat);
+
+        // u8g2->setFont(u8g2_font_siji_t_6x10);
+        u8g2->setFont(u8g2_font_micro_tr);
+        // u8g2->setCursor(logoMargin+10, 16);
+        u8g2->setCursor(5, 10);
+        u8g2->print("Local Packet Recv");
+        u8g2->setCursor(80+5, 10);
+        u8g2->print(formatedNumber(numBuffer, packetRecv));
+
+        u8g2->setCursor(5, 15 + (1*lineSpacing));
+        u8g2->print("Keep Alive Packet");
+        u8g2->setCursor(80+5, 15 + (1*lineSpacing));
+        u8g2->print(formatedNumber(numBuffer, keepAliveSent));
+
+
+        u8g2->setCursor(5, 20 + (2*lineSpacing));
+        u8g2->print("NB-IoT Packet Sent");
+        u8g2->setCursor(80+5, 20 + (2*lineSpacing));
+        u8g2->print(formatedNumber(numBuffer, nbSentOk));
+
+        u8g2->setCursor(5, 25 + (3*lineSpacing));
+        u8g2->print("Reboot");
+        u8g2->setCursor(80+5, 25 + (3*lineSpacing));
+        u8g2->print(formatedNumber(numBuffer, rebootCount));
+
+        u8g2->setCursor(5, 30+ (4*lineSpacing));
+         u8g2->print("uptime ");
+
+        char uptimeBuffer[40];
+        sprintf(uptimeBuffer, "%dd,%02dh,%02dm,%02ds", day()-1, hour(), minute(), second());
+        u8g2->setCursor(40+5, 30+ (4*lineSpacing));
+         u8g2->print(uptimeBuffer);
+
+
+        char statusBuffer[60];
+
+        sprintf(statusBuffer, "Status: (Queue=%d)", pArrIdx);
+        u8g2->setCursor(5, 40+ (5*lineSpacing));
+        u8g2->print(statusBuffer);
+
+        u8g2->setCursor(5, 45 + (6*lineSpacing));
+        u8g2->print(status);
+
+        // u8g2->setFont(u8g2_font_p01type_tn);
+        // u8g2->setFont(u8g2_font_micro_tr);
+
+         // u8g2->setFont(u8g2_font_unifont_t_symbols);
+         // // https://github.com/olikraus/u8g2/wiki/u8g2reference
+         // u8g2->drawGlyph(0+4, 10, 9680+count%7);
+         // u8g2->setCursor(0, 7);
+      }
+   } while (u8g2->nextPage());
+}
+
 void loop() {
   nb.loop();
 
   if ( (millis() - lastSentOkMillis) > 10800 * 1000) {
-    rebootCount += 1;
+    esp_default_wake_deep_sleep();
     esp_sleep_enable_timer_wakeup(SLEEP_TIME_SECONDS * uS_TO_S_FACTOR);
     esp_deep_sleep_start();
     // ESP.deepSleep(1e6);
   }
 
   float MINUTE = 1;
-  uint32_t everyMs = MINUTE *  10 * 1000;
-  if ( isNbConnected &&  (millis() - lastSentOkMillis > everyMs) )  {
-    Serial.printf("KEEP ALIVE.. %d, ct=%d, millis=%lu\n", everyMs, ct, millis());
-    generatePacket();
-    lastSentOkMillis = millis();
-  }
+  uint32_t everyMs = MINUTE *  60 * 1000;
 
   if ( dirty && (millis() - msAfterESPNowRecv) > 2500 && (pArrIdx > 0) && (isNbConnected)) {
-    generatePacket();
+    generatePacketToQueue();
     digitalWrite(RED_LED, LOW);
     prev = millis();
     dirty = false;
   }
 
-  interval.every_ms(1000, [&]() {
-   u8g2->firstPage();
-   int factor = micros()%6;
-   factor = +0;
-   do {
-     int _pageIdx = 0;
-     int marginLeft = 6;
-      if (_pageIdx == 0) {
-        int logoMargin = 40;
-        // u8g2->drawXBM(0,0,128,64, logo);
-        // u8g2->drawXBM(5, 5, 40, 32, cat);
-
-        u8g2->setFont(u8g2_font_siji_t_6x10);
-        u8g2->setCursor(logoMargin+10, 16);
-        u8g2->print("NB-IoT Bridge");
-
-        u8g2->setFont(u8g2_font_siji_t_6x10);
-        u8g2->setCursor(logoMargin+12, 27);
-        u8g2->print("Weather");
-
-        u8g2->setCursor(logoMargin+12, 35);
-        u8g2->print("station");
-
-        u8g2->setFont(u8g2_font_logisoso16_tf);
-        u8g2->setCursor(6+marginLeft, 60);
-        u8g2->print(88);
-        u8g2->print("°C");
-
-        u8g2->setFont(u8g2_font_open_iconic_all_2x_t);
-        u8g2->drawGlyph(74, 60, 152);
-
-        u8g2->setFont(u8g2_font_logisoso16_tf);
-        u8g2->setCursor(85+marginLeft, 60);
-
-        u8g2->print(99);
-        u8g2->print("%");
-
-      }
-   } while (u8g2->nextPage());
+  keepAliveInterval.every_ms(everyMs, [&]() {
+    if ( isNbConnected )  {
+      u8g2->clearBuffer();          // clear the internal memory
+      u8g2->sendBuffer();          // transfer internal memory to the display
+      keepAliveSent++;
+      updateStatus("sending keep alive...");
+      Serial.printf("KEEP ALIVE.. %d, ct=%d, millis=%lu\n", everyMs, ct, millis());
+      generatePacketToQueue();
+      lastSentOkMillis = millis();
+    }
   });
 
+  interval.every_ms(100, [&]() {
+    paintScreen();
+  });
+}
+
+void updateStatus(String text) {
+  status = text;
+  paintScreen();
+  // printf("%s\n", text.c_str());
+  // u8g2->setFont(u8g2_font_5x7_tf); // choose a suitable font
+  // u8g2->drawStr(0, 10, text.c_str());
+  // u8g2->clearBuffer();          // clear the internal memory
+  // u8g2->sendBuffer();          // transfer internal memory to the display
 }
